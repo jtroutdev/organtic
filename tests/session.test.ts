@@ -603,3 +603,23 @@ test("every source is searched, and one that fails is named without hiding the r
   assert.deepEqual([group().anime, kitsuAsked], [false, 1]);
   assert.doesNotMatch(group().reason, /could not be searched/);
 });
+
+test("files with no usable number are matched by the episode name in the filename", async (t) => {
+  const { group } = await setup(t, [
+    "Severance/Season 1/Severance - Part 2.mkv",
+    "Severance/Season 1/Severance 103.mkv",
+    "Severance/Season 1/Severance - Unknown.mkv",
+    "Severance - 0101 - Part 1.mkv",
+  ]);
+  const found = group("Severance");
+  assert.deepEqual(
+    found.files.map((file) => [file.label, file.issue]).sort(),
+    [
+      ["S01E01", null],
+      ["S01E03", null],
+      ["no number", "No episode of this show is named like “unknown”."],
+      ["“part 2” → S01E02", null],
+    ],
+  );
+  assert.match(found.reason, /1 file was matched by episode name, having no number\./);
+});

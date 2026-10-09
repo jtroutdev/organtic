@@ -53,6 +53,33 @@ test("groups episodes by show across naming styles and sets extras aside", () =>
   );
 });
 
+test("unnumbered files named after a show beside its episodes join that show", () => {
+  const files = [
+    "Simpsons/The Simpsons S08E11.avi",
+    "Simpsons/The Simpsons 812 - Homer's Enemy.avi",
+    "Simpsons/The Simpsons - Lisa the Vegetarian.avi",
+    // Elsewhere, or with a year, a longer title is its own film.
+    "Films/The Simpsons Movie.mkv",
+    "Simpsons/The Simpsons Movie (2007).mkv",
+  ].map(file);
+  const { groups } = groupFiles(files);
+  assert.deepEqual(
+    groups.map((group) => [group.kind, group.title, group.fileIds.length]),
+    [
+      ["tv", "The Simpsons", 3],
+      ["movie", "The Simpsons Movie", 1],
+      ["movie", "The Simpsons Movie", 1],
+    ],
+  );
+  assert.deepEqual(
+    files.slice(1, 3).map(({ parsed }) => [parsed.season, parsed.episode, parsed.episodeTitle]),
+    [
+      [8, 12, "homer s enemy"],
+      [null, null, "lisa the vegetarian"],
+    ],
+  );
+});
+
 test("ranks candidates and is confident only about a clear winner", () => {
   const dunes = [candidate("Dune", 1984, 1), candidate("Dune", 2021, 2), candidate("Dune: Part Two", 2024, 3)];
   const withYear = rankCandidates({ title: "Dune", year: 2021 }, dunes);
