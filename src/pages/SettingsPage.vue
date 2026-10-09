@@ -143,262 +143,266 @@ const sections = computed<[string, string, string, string][]>(() => [
 </script>
 
 <template>
-  <div class="head">
-    <div>
-      <h1>Settings</h1>
-      <p>Saved on this computer and used for every batch.</p>
-    </div>
-  </div>
-  <SplitView list="Settings sections" detail="Selected section">
-    <template #side>
-      <ListItem
-        v-for="[id, name, note, tone] in sections"
-        :key="id"
-        :current="store.section === id"
-        :tone="tone"
-        :note="note"
-        @click="store.section = id"
-      >
-        {{ name }}
-      </ListItem>
-    </template>
-
-    <template v-if="store.section === 'naming'">
-      <h2 class="title">Naming</h2>
-      <div class="row">
-        <span class="label">Preset</span>
-        <div class="seg" role="group" aria-label="Preset">
-          <button
-            v-for="[id, label] in presets"
-            :key="id"
-            type="button"
-            :aria-pressed="preset === id"
-            @click="pick(id)"
-          >
-            {{ label }}
-          </button>
+  <div class="page">
+    <div class="above">
+      <div class="head">
+        <div>
+          <h1>Settings</h1>
+          <p>Saved on this computer and used for every batch.</p>
         </div>
       </div>
-      <template v-for="[key, label] in fields" :key="key">
-        <label class="field"
-          >{{ label }} template
-          <input
-            v-model="draft[key]"
-            class="input mono"
-            spellcheck="false"
-            maxlength="500"
-            @input="preset = 'custom'"
-        /></label>
-        <div class="example mono" aria-live="polite">
-          <span class="sr-only">Example: </span>
-          <span v-if="errors[key].length" class="issue bad">{{
-            errors[key].join(" ")
-          }}</span>
-          <template v-else>{{ example(key) }}</template>
+    </div>
+    <SplitView :current="store.section" list="Settings sections" detail="Selected section">
+      <template #side>
+        <ListItem
+          v-for="[id, name, note, tone] in sections"
+          :key="id"
+          :current="store.section === id"
+          :tone="tone"
+          :note="note"
+          @click="store.section = id"
+        >
+          {{ name }}
+        </ListItem>
+      </template>
+
+      <template v-if="store.section === 'naming'">
+        <h2 class="title">Naming</h2>
+        <div class="row">
+          <span class="label">Preset</span>
+          <div class="seg" role="group" aria-label="Preset">
+            <button
+              v-for="[id, label] in presets"
+              :key="id"
+              type="button"
+              :aria-pressed="preset === id"
+              @click="pick(id)"
+            >
+              {{ label }}
+            </button>
+          </div>
+        </div>
+        <template v-for="[key, label] in fields" :key="key">
+          <label class="field"
+            >{{ label }} template
+            <input
+              v-model="draft[key]"
+              class="input mono"
+              spellcheck="false"
+              maxlength="500"
+              @input="preset = 'custom'"
+          /></label>
+          <div class="example mono" aria-live="polite">
+            <span class="sr-only">Example: </span>
+            <span v-if="errors[key].length" class="issue bad">{{
+              errors[key].join(" ")
+            }}</span>
+            <template v-else>{{ example(key) }}</template>
+          </div>
+        </template>
+        <div v-if="preset === 'custom'" class="row">
+          <button
+            class="btn primary"
+            type="button"
+            :disabled="!valid || store.busy || (!dirty && store.settings.preset === 'custom')"
+            @click="saveTemplates"
+          >
+            Save templates
+          </button>
+          <span v-if="dirty" class="muted">Not saved yet.</span>
+        </div>
+        <div>
+          <h3 class="label" style="margin-bottom: 6px">Placeholders</h3>
+          <div class="tokens">
+            <code v-for="name in PLACEHOLDERS" :key="name" v-text="'{' + name + '}'"></code>
+            <code>{season:00}</code>
+          </div>
+          <p class="muted" style="margin-top: 8px">
+            “/” starts a folder. Add :00 to pad a number. A placeholder with no
+            value is dropped along with its empty brackets. {idsource} and {id}
+            give the best ID the match has: TMDB, then TVDB, then IMDb.
+          </p>
         </div>
       </template>
-      <div v-if="preset === 'custom'" class="row">
-        <button
-          class="btn primary"
-          type="button"
-          :disabled="!valid || store.busy || (!dirty && store.settings.preset === 'custom')"
-          @click="saveTemplates"
-        >
-          Save templates
-        </button>
-        <span v-if="dirty" class="muted">Not saved yet.</span>
-      </div>
-      <div>
-        <h3 class="label" style="margin-bottom: 6px">Placeholders</h3>
-        <div class="tokens">
-          <code v-for="name in PLACEHOLDERS" :key="name" v-text="'{' + name + '}'"></code>
-          <code>{season:00}</code>
+
+      <template v-else-if="store.section === 'sources'">
+        <h2 class="title">Sources</h2>
+        <div>
+          <h3 class="sub">The Movie Database</h3>
+          <p class="muted">
+            Films, shows and episode titles. Uses your own free API read access
+            token.
+            <button class="link" type="button" @click="api.openReference('token')">
+              Get a token
+            </button>
+          </p>
         </div>
-        <p class="muted" style="margin-top: 8px">
-          “/” starts a folder. Add :00 to pad a number. A placeholder with no
-          value is dropped along with its empty brackets. {idsource} and {id}
-          give the best ID the match has: TMDB, then TVDB, then IMDb.
-        </p>
-      </div>
-    </template>
-
-    <template v-else-if="store.section === 'sources'">
-      <h2 class="title">Sources</h2>
-      <div>
-        <h3 class="sub">The Movie Database</h3>
-        <p class="muted">
-          Films, shows and episode titles. Uses your own free API read access
-          token.
-          <button class="link" type="button" @click="api.openReference('token')">
-            Get a token
+        <form class="row" @submit.prevent="setToken(token)">
+          <input
+            v-model="token"
+            class="input"
+            type="password"
+            autocomplete="off"
+            aria-label="TMDB API read access token"
+            placeholder="Paste your TMDB token"
+            style="flex: 1 1 220px; width: auto"
+          />
+          <button class="btn primary" type="submit" :disabled="!token.trim() || store.busy">
+            Save token
           </button>
-        </p>
-      </div>
-      <form class="row" @submit.prevent="setToken(token)">
-        <input
-          v-model="token"
-          class="input"
-          type="password"
-          autocomplete="off"
-          aria-label="TMDB API read access token"
-          placeholder="Paste your TMDB token"
-          style="flex: 1 1 220px; width: auto"
-        />
-        <button class="btn primary" type="submit" :disabled="!token.trim() || store.busy">
-          Save token
-        </button>
-        <button
-          v-if="store.sources.tmdb !== 'none'"
-          class="btn"
-          type="button"
-          :disabled="store.busy"
-          @click="setToken('')"
-        >
-          Remove
-        </button>
-      </form>
-      <div class="row">
-        <span class="pill" :class="store.sources.tmdb === 'none' ? 'off' : 'ok'">{{
-          tokenNote
-        }}</span>
-        <span v-if="!store.sources.canSave" class="muted"
-          >No system keychain is available, so the token is not stored and must
-          be entered again next time.</span
-        >
-      </div>
-      <p class="muted row">
-        <img :src="tmdbLogo" alt="TMDB" height="12" />
-        This product uses the TMDB API but is not endorsed or certified by
-        TMDB.
-      </p>
-      <div style="border-top: 1px solid var(--line); padding-top: 14px">
-        <h3 class="sub">TVmaze</h3>
-        <p class="muted">
-          TV shows only. Needs no account, and is used for shows when no TMDB
-          token is set. Data from
-          <button class="link" type="button" @click="api.openReference('tvmaze')">
-            TVmaze</button
-          >, licensed
-          <button class="link" type="button" @click="api.openReference('license')">
-            CC BY-SA</button
-          >.
-        </p>
-      </div>
-      <div style="border-top: 1px solid var(--line); padding-top: 14px">
-        <h3 class="sub">Kitsu</h3>
-        <p class="muted">
-          An anime catalogue with romaji, English and Japanese titles. Needs
-          no account. Choose it as the source on Review for anime that the
-          others list poorly. Each season or part is usually its own entry
-          there.
-        </p>
-      </div>
-      <label class="check">
-        <input
-          type="checkbox"
-          :checked="store.settings.animeTitles"
-          :disabled="store.busy"
-          @change="saveSettings({ animeTitles: ($event.target as HTMLInputElement).checked })"
-        />
-        <span
-          >Use Kitsu to find anime under their English titles<small
-            >When a fansub-style release is not matched with confidence, its
-            title is sent to Kitsu to learn what else it is called</small
-          ></span
-        >
-      </label>
-      <div style="border-top: 1px solid var(--line); padding-top: 14px">
-        <h3 class="sub">TheTVDB <span class="muted">(optional)</span></h3>
-        <p class="muted">
-          Used only to title anime specials that are numbered as TVDB lists
-          them, which no other source here can do. Needs your own v4 API key,
-          and a subscriber PIN if your key requires one.
-          <button class="link" type="button" @click="api.openReference('tvdb')">
-            About TVDB keys
+          <button
+            v-if="store.sources.tmdb !== 'none'"
+            class="btn"
+            type="button"
+            :disabled="store.busy"
+            @click="setToken('')"
+          >
+            Remove
           </button>
+        </form>
+        <div class="row">
+          <span class="pill" :class="store.sources.tmdb === 'none' ? 'off' : 'ok'">{{
+            tokenNote
+          }}</span>
+          <span v-if="!store.sources.canSave" class="muted"
+            >No system keychain is available, so the token is not stored and must
+            be entered again next time.</span
+          >
+        </div>
+        <p class="muted row">
+          <img :src="tmdbLogo" alt="TMDB" height="12" />
+          This product uses the TMDB API but is not endorsed or certified by
+          TMDB.
         </p>
-      </div>
-      <form class="row" @submit.prevent="setTvdbKey(tvdbKey, tvdbPin)">
-        <input
-          v-model="tvdbKey"
-          class="input"
-          type="password"
-          autocomplete="off"
-          aria-label="TVDB API key"
-          placeholder="Paste your TVDB API key"
-          style="flex: 2 1 200px; width: auto"
-        />
-        <input
-          v-model="tvdbPin"
-          class="input"
-          type="password"
-          autocomplete="off"
-          aria-label="TVDB subscriber PIN, if your key needs one"
-          placeholder="PIN, if needed"
-          style="flex: 1 1 120px; width: auto"
-        />
-        <button class="btn primary" type="submit" :disabled="!tvdbKey.trim() || store.busy">
-          Check and save
-        </button>
-        <button
-          v-if="store.sources.tvdb !== 'none'"
-          class="btn"
-          type="button"
-          :disabled="store.busy"
-          @click="setTvdbKey('', '')"
+        <div style="border-top: 1px solid var(--line); padding-top: 14px">
+          <h3 class="sub">TVmaze</h3>
+          <p class="muted">
+            TV shows only. Needs no account, and is used for shows when no TMDB
+            token is set. Data from
+            <button class="link" type="button" @click="api.openReference('tvmaze')">
+              TVmaze</button
+            >, licensed
+            <button class="link" type="button" @click="api.openReference('license')">
+              CC BY-SA</button
+            >.
+          </p>
+        </div>
+        <div style="border-top: 1px solid var(--line); padding-top: 14px">
+          <h3 class="sub">Kitsu</h3>
+          <p class="muted">
+            An anime catalogue with romaji, English and Japanese titles. Needs
+            no account. Choose it as the source on Review for anime that the
+            others list poorly. Each season or part is usually its own entry
+            there.
+          </p>
+        </div>
+        <label class="check">
+          <input
+            type="checkbox"
+            :checked="store.settings.animeTitles"
+            :disabled="store.busy"
+            @change="saveSettings({ animeTitles: ($event.target as HTMLInputElement).checked })"
+          />
+          <span
+            >Use Kitsu to find anime under their English titles<small
+              >When a fansub-style release is not matched with confidence, its
+              title is sent to Kitsu to learn what else it is called</small
+            ></span
+          >
+        </label>
+        <div style="border-top: 1px solid var(--line); padding-top: 14px">
+          <h3 class="sub">TheTVDB <span class="muted">(optional)</span></h3>
+          <p class="muted">
+            Used only to title anime specials that are numbered as TVDB lists
+            them, which no other source here can do. Needs your own v4 API key,
+            and a subscriber PIN if your key requires one.
+            <button class="link" type="button" @click="api.openReference('tvdb')">
+              About TVDB keys
+            </button>
+          </p>
+        </div>
+        <form class="row" @submit.prevent="setTvdbKey(tvdbKey, tvdbPin)">
+          <input
+            v-model="tvdbKey"
+            class="input"
+            type="password"
+            autocomplete="off"
+            aria-label="TVDB API key"
+            placeholder="Paste your TVDB API key"
+            style="flex: 2 1 200px; width: auto"
+          />
+          <input
+            v-model="tvdbPin"
+            class="input"
+            type="password"
+            autocomplete="off"
+            aria-label="TVDB subscriber PIN, if your key needs one"
+            placeholder="PIN, if needed"
+            style="flex: 1 1 120px; width: auto"
+          />
+          <button class="btn primary" type="submit" :disabled="!tvdbKey.trim() || store.busy">
+            Check and save
+          </button>
+          <button
+            v-if="store.sources.tvdb !== 'none'"
+            class="btn"
+            type="button"
+            :disabled="store.busy"
+            @click="setTvdbKey('', '')"
+          >
+            Remove
+          </button>
+        </form>
+        <div class="row">
+          <span class="pill" :class="store.sources.tvdb === 'none' ? 'off' : 'ok'">{{
+            NOTES[store.sources.tvdb]
+          }}</span>
+          <span class="muted"
+            >Metadata provided by TheTVDB. Please consider adding missing
+            information or subscribing.</span
+          >
+        </div>
+        <label class="check">
+          <input
+            type="checkbox"
+            :checked="store.settings.animeSeasons"
+            :disabled="store.busy"
+            @change="saveSettings({ animeSeasons: ($event.target as HTMLInputElement).checked })"
+          />
+          <span
+            >Place Kitsu matches in their TMDB or TVDB season<small
+              >Off unless you turn it on. Downloads two community-maintained
+              lists from GitHub the first time Kitsu is used as a source, and
+              refreshes them weekly. Their terms of use are not stated</small
+            ></span
+          >
+        </label>
+        <label class="field"
+          >Titles in
+          <select
+            class="input"
+            :value="store.settings.language"
+            @change="saveSettings({ language: ($event.target as HTMLSelectElement).value })"
+          >
+            <option v-for="[code, name] in LANGUAGES" :key="code" :value="code">
+              {{ name }} ({{ code }})
+            </option>
+          </select></label
         >
-          Remove
-        </button>
-      </form>
-      <div class="row">
-        <span class="pill" :class="store.sources.tvdb === 'none' ? 'off' : 'ok'">{{
-          NOTES[store.sources.tvdb]
-        }}</span>
-        <span class="muted"
-          >Metadata provided by TheTVDB. Please consider adding missing
-          information or subscribing.</span
-        >
-      </div>
-      <label class="check">
-        <input
-          type="checkbox"
-          :checked="store.settings.animeSeasons"
-          :disabled="store.busy"
-          @change="saveSettings({ animeSeasons: ($event.target as HTMLInputElement).checked })"
-        />
-        <span
-          >Place Kitsu matches in their TMDB or TVDB season<small
-            >Off unless you turn it on. Downloads two community-maintained
-            lists from GitHub the first time Kitsu is used as a source, and
-            refreshes them weekly. Their terms of use are not stated</small
-          ></span
-        >
-      </label>
-      <label class="field"
-        >Titles in
-        <select
-          class="input"
-          :value="store.settings.language"
-          @change="saveSettings({ language: ($event.target as HTMLSelectElement).value })"
-        >
-          <option v-for="[code, name] in LANGUAGES" :key="code" :value="code">
-            {{ name }} ({{ code }})
-          </option>
-        </select></label
-      >
-    </template>
+      </template>
 
-    <template v-else>
-      <h2 class="title">Adding and renaming</h2>
-      <label v-for="[key, label, note] in toggles" :key="key" class="check">
-        <input
-          type="checkbox"
-          :checked="store.settings[key]"
-          :disabled="store.busy"
-          @change="saveSettings({ [key]: ($event.target as HTMLInputElement).checked })"
-        />
-        <span>{{ label }}<small>{{ note }}</small></span>
-      </label>
-    </template>
-  </SplitView>
+      <template v-else>
+        <h2 class="title">Adding and renaming</h2>
+        <label v-for="[key, label, note] in toggles" :key="key" class="check">
+          <input
+            type="checkbox"
+            :checked="store.settings[key]"
+            :disabled="store.busy"
+            @change="saveSettings({ [key]: ($event.target as HTMLInputElement).checked })"
+          />
+          <span>{{ label }}<small>{{ note }}</small></span>
+        </label>
+      </template>
+    </SplitView>
+  </div>
 </template>

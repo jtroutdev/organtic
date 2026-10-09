@@ -153,9 +153,11 @@ export async function go(page: Page) {
 }
 
 export async function saveSettings(change: Partial<AppSettings>) {
-  const saved = await run(() =>
-    api.saveSettings({ ...store.settings, ...change }),
+  // A plain copy: the desktop bridge cannot pass the reactive proxy around the nested templates.
+  const settings: AppSettings = JSON.parse(
+    JSON.stringify({ ...store.settings, ...change }),
   );
+  const saved = await run(() => api.saveSettings(settings));
   if (saved) {
     store.settings = saved;
     announce("Settings saved.");
