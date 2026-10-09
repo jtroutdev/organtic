@@ -225,8 +225,9 @@ export async function createPlan(
     taken: (name: string) => boolean;
     changes: Changes;
   }[] = [];
-  // NFO files already accounted for, whether moved, written or found in place.
+  // NFO files on their way to a new name, and the ones that would be written if none arrives.
   const nfos = new Set<string>();
+  const unwritten: { target: string; media: Selection["media"]; changes: Changes }[] = [];
   const list = async (dir: string) => {
     let entries = listings.get(dir);
     if (!entries) listings.set(dir, (entries = await entriesOf(dir)));
@@ -286,7 +287,6 @@ export async function createPlan(
       });
       if (target !== file.path) add(await moveOperation(file.path, target));
       const oldStem = path.basename(file.path, path.extname(file.path));
-      let hasNfo = false;
       if (target !== file.path) {
         // Files named after the video travel with it: subtitles, its NFO, its artwork.
         const siblings = await fs.readdir(parent);
@@ -311,13 +311,9 @@ export async function createPlan(
             videoStems.some((v) => v.length > oldStem.length && named(v))
           )
             continue;
-          add(
-            await moveOperation(
-              path.join(parent, sibling),
-              path.join(folder, `${newStem}${sibling.slice(oldStem.length)}`),
-            ),
-          );
-          hasNfo ||= ext === "nfo" && stem === oldStem;
+          const arriving = path.join(folder, `${newStem}${sibling.slice(oldStem.length)}`);
+          add(await moveOperation(path.join(parent, sibling), arriving));
+          if (ext === "nfo") nfos.add(key(arriving));
         }
         // Remember where this folder's videos are going, for the artwork that belongs to the folder.
         const leaving = departures.get(parent) ?? {
@@ -336,21 +332,15 @@ export async function createPlan(
         leaving.kinds.add(media.kind);
         departures.set(parent, leaving);
       }
-      // An NFO the file already had is kept rather than written over, as is one already
-      // waiting under the new name, which is what a correctly named video has beside it.
-      // Two copies of one episode in different formats share a name, and so share one NFO.
+      // An NFO already waiting under the new name, which is what a correctly named video has
+      // beside it, is kept rather than written over. Whether one is being moved there is only
+      // known once every file has been planned.
       const nfoName = `${newStem}.nfo`;
-      const nfoKey = key(path.join(folder, nfoName));
-      hasNfo ||=
-        nfos.has(nfoKey) ||
-        (await list(folder)).some((name) => key(name) === key(nfoName));
-      if (options.nfo && !hasNfo)
-        add({
-          type: "write",
-          target: path.join(folder, nfoName),
-          content: makeNfo(media),
-        });
-      nfos.add(nfoKey);
+      if (
+        options.nfo &&
+        !(await list(folder)).some((name) => key(name) === key(nfoName))
+      )
+        unwritten.push({ target: path.join(folder, nfoName), media, changes });
       // Artwork belongs to a title's own folder, so it needs a template that makes one.
       // It is decided after the loop, once everything being moved into each folder is known.
       if (options.artwork && options.organize !== false && segments.length) {
@@ -386,6 +376,14 @@ export async function createPlan(
       errors.push(`${file.name}: ${messageOf(error)}`);
       issues.push({ source: file.path, message: messageOf(error) });
     }
+  }
+  // An NFO the file already had is kept rather than written over. Two copies of one title in
+  // different formats share a name, and so share one NFO, whichever of them brought it.
+  for (const { target, media, changes } of unwritten) {
+    if (nfos.has(key(target))) continue;
+    nfos.add(key(target));
+    operations.push({ type: "write", target, content: makeNfo(media) });
+    changes.push({ source: null, target });
   }
   // A show's own files (tvshow.nfo, its poster and fanart) follow it to its new folder, but only
   // when the whole show is going: every video under the old show folder is in this batch and
@@ -495,14 +493,22 @@ export async function createPlan(
     operations.push(op);
     changes.push({ source: null, target: op.target, artwork: true });
   }
-  const targets = new Set<string>(),
+  const targets = new Map<string, Operation>(),
     sources = new Set<string>();
+  // Enough of a path to tell apart two files with the same name in different folders.
+  const shortPath = (file: string) =>
+    path.join(path.basename(path.dirname(file)), path.basename(file));
   for (const op of operations) {
     try {
       const targetKey = key(op.target);
-      if (targets.has(targetKey))
-        throw new Error("Two operations have the same destination.");
-      targets.add(targetKey);
+      const other = targets.get(targetKey);
+      if (other)
+        throw new Error(
+          other.type === "move" && op.type === "move"
+            ? `Two operations have the same destination: "${shortPath(other.source)}" and "${shortPath(op.source)}".`
+            : "Two operations have the same destination.",
+        );
+      targets.set(targetKey, op);
       if (op.type === "move") {
         if (sources.has(key(op.source)))
           throw new Error("A source file appears more than once.");

@@ -167,6 +167,17 @@ test("two copies of a film in different formats share one written NFO", async (t
     plan.operations.map((op) => `${op.type} ${path.basename(op.target)}`).sort(),
     ["move Arrival (2016).avi", "move Arrival (2016).mkv", "write Arrival (2016).nfo"],
   );
+  // When the later copy brings its own NFO, that one is kept and nothing is written.
+  await fs.writeFile(path.join(f.dir, "Arrival.2016.720p.nfo"), "its own metadata");
+  const kept = await planInPlace(
+    files.toReversed().map((file) => ({ file, media })),
+    { nfo: true },
+  );
+  assert.deepEqual(kept.errors, []);
+  assert.deepEqual(
+    kept.operations.filter((op) => /\.nfo$/.test(op.target)).map((op) => op.type),
+    ["move"],
+  );
 });
 
 test("recovers an incomplete final journal record without corrupting later events", async (t) => {
