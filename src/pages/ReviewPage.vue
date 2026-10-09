@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import type {
   Catalogue,
   MediaKind,
@@ -78,13 +78,45 @@ watch(kind, (value) => {
 });
 const SOURCES = { tmdb: "TMDB", tvmaze: "TVmaze", kitsu: "Kitsu" };
 
-// A candidate's description stays folded away until it is needed to tell two results apart.
-const described = ref<string | null>(null);
+// Everything known about a candidate stays in a dialog until it is needed to tell two results apart.
 const idOf = (candidate: { provider: string; id: unknown }) =>
   `${candidate.provider}-${candidate.id}`;
-const describing = computed(() =>
-  group.value?.candidates.find((item) => idOf(item) === described.value),
+const details = ref<HTMLDialogElement>();
+const detailed = ref<string | null>(null);
+const detailedAt = computed(
+  () => group.value?.candidates.findIndex((item) => idOf(item) === detailed.value) ?? -1,
 );
+const detail = computed(() => group.value?.candidates[detailedAt.value]);
+const facts = computed<[string, string | number | null | undefined][]>(() => {
+  const item = detail.value;
+  if (!item) return [];
+  const source = SOURCES[item.provider];
+  const rows: [string, string | number | null | undefined][] = [
+    ["Source", source],
+    ["Type", item.kind === "tv" ? "TV show" : "Film"],
+    ["Year", item.year ?? "Unknown"],
+    ["Fit", item.fit],
+    ["Language", item.language],
+    [`${source} ID`, item.id],
+    ["TMDB ID", item.provider === "tmdb" ? null : item.tmdbId],
+    ["TVDB ID", item.tvdbId],
+    ["TVDB season", item.tvdbSeason],
+    ["IMDb ID", item.imdbId],
+    ["Page", item.sourceUrl],
+  ];
+  return rows.filter(([, value]) => value != null && value !== "");
+});
+async function showDetails(id: string) {
+  detailed.value = id;
+  await nextTick();
+  details.value?.showModal();
+}
+async function useDetailed() {
+  const index = detailedAt.value;
+  details.value?.close();
+  if (index >= 0) await run(() => api.choose(group.value!.key, index));
+  await focusOn(".detail");
+}
 // Posters are shown small; TMDB and TVmaze serve a reduced size at a predictable address.
 const thumb = (url: string) =>
   url
@@ -348,13 +380,13 @@ const search = () =>
           <span class="mono">{{ store.queue.destination }}</span>
           <button
             v-if="store.queue.destinationChanged"
-            class="link"
+            class="btn"
             type="button"
             @click="run(api.resetDestination)"
           >
             Use the added folder
           </button>
-          <button class="link" type="button" @click="run(api.chooseDestination)">
+          <button class="btn" type="button" @click="run(api.chooseDestination)">
             Change
           </button>
         </div>
@@ -553,7 +585,7 @@ const search = () =>
                   }}</span>
                   <button
                     v-else
-                    class="link"
+                    class="btn"
                     type="button"
                     :disabled="busy"
                     :aria-label="`Use this: ${candidate.title} (${candidate.year ?? 'year unknown'})`"
@@ -562,21 +594,17 @@ const search = () =>
                     Use this
                   </button>
                   <button
-                    class="link"
+                    class="btn"
                     type="button"
-                    :aria-expanded="described === idOf(candidate)"
-                    :aria-label="`Description of ${candidate.title} (${candidate.year ?? 'year unknown'})`"
-                    @click="described = described === idOf(candidate) ? null : idOf(candidate)"
+                    aria-haspopup="dialog"
+                    :aria-label="`Details of ${candidate.title} (${candidate.year ?? 'year unknown'})`"
+                    @click="showDetails(idOf(candidate))"
                   >
-                    {{ described === idOf(candidate) ? "Hide description" : "Description" }}
+                    Details
                   </button>
                 </span>
               </div>
             </div>
-            <p v-if="describing" class="about">
-              <strong>{{ describing.title }}:</strong>
-              {{ describing.overview || "No description available." }}
-            </p>
           </div>
           <div class="fill">
             <div>
@@ -655,7 +683,7 @@ const search = () =>
                 <span v-if="file.issue" class="issue">{{ file.issue }}</span>
                 <span v-else-if="file.excluded"
                   ><span class="muted">Left out of the next batch. </span>
-                  <button class="link" type="button" @click="run(() => api.exclude(file.id, false))">
+                  <button class="btn" type="button" @click="run(() => api.exclude(file.id, false))">
                     Include again
                   </button></span
                 >
@@ -756,5 +784,49 @@ const search = () =>
         </div>
       </details>
     </template>
+    <dialog
+      ref="details"
+      class="help facts"
+      aria-labelledby="details-title"
+      @close="detailed = null"
+    >
+      <template v-if="detail">
+        <div class="about">
+          <img
+            v-if="detail.posterUrl && !broken.includes(idOf(detail))"
+            class="poster"
+            :src="thumb(detail.posterUrl)"
+            alt=""
+            referrerpolicy="no-referrer"
+            @error="posterFailed($event, detail)"
+          />
+          <div>
+            <h2 id="details-title" class="title">
+              {{ detail.title }}
+              <span class="muted">({{ detail.year ?? "year unknown" }})</span>
+            </h2>
+            <p>{{ detail.overview || "No description available." }}</p>
+          </div>
+        </div>
+        <dl>
+          <template v-for="[name, value] in facts" :key="name">
+            <dt class="label">{{ name }}</dt>
+            <dd :class="{ mono: name === 'Page' || name.endsWith('ID') }">{{ value }}</dd>
+          </template>
+        </dl>
+        <form class="row" method="dialog">
+          <button
+            v-if="group?.chosen !== detailedAt"
+            class="btn primary"
+            type="button"
+            :disabled="busy"
+            @click="useDetailed"
+          >
+            Use this
+          </button>
+          <button class="btn" type="submit">Close</button>
+        </form>
+      </template>
+    </dialog>
   </div>
 </template>

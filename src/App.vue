@@ -64,7 +64,8 @@ async function add(folder: boolean) {
   await run(folder ? api.addFolder : api.addFiles);
 }
 function shortcut(event: KeyboardEvent) {
-  if (help.value?.open) return;
+  // An open dialog keeps the keyboard to itself.
+  if (document.querySelector("dialog[open]")) return;
   const target = event.target as HTMLElement;
   const typing =
     target.isContentEditable ||
