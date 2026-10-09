@@ -5,6 +5,7 @@ import { renderTemplate } from "../core/naming.ts";
 import { parseMediaPath } from "../core/parse.ts";
 import { Providers } from "../core/providers.ts";
 import { Session } from "../core/session.ts";
+import { nameVersions } from "../core/versions.ts";
 import type { Planner } from "../core/session.ts";
 import { DEFAULT_SETTINGS, mergeSettings } from "../core/settings.ts";
 import type {
@@ -13,6 +14,7 @@ import type {
   Operation,
   Plan,
   QueueState,
+  Selection,
   SourcesState,
 } from "../core/types.ts";
 
@@ -170,12 +172,18 @@ const planner: Planner = {
     const operations: Operation[] = [];
     const previews: Plan["previews"] = [];
     const templates = options.templates ?? DEFAULT_SETTINGS.templates;
-    for (const { file, media } of selections) {
-      const segments = renderTemplate(
-        media.kind === "tv" ? templates.episode : templates.movie,
-        media,
-      );
-      const stem = segments.pop()!;
+    const render = ({ media }: Selection) =>
+      renderTemplate(media.kind === "tv" ? templates.episode : templates.movie, media);
+    const versions = nameVersions(selections, (selection) =>
+      options.organize === false
+        ? `${selection.file.path.slice(0, selection.file.path.lastIndexOf("/"))}/${render(selection).pop()}`
+        : [selection.file.root, ...render(selection)].join("/"),
+    );
+    for (const selection of selections) {
+      const { file, media } = selection;
+      const version = versions.get(selection);
+      const segments = render(selection);
+      const stem = segments.pop()! + (version ? ` - ${version.label}` : "");
       let folder = file.path.slice(0, file.path.lastIndexOf("/"));
       if (options.organize !== false) {
         folder = file.root;
@@ -185,14 +193,16 @@ const planner: Planner = {
         }
       }
       const target = `${folder}/${stem}.mkv`;
-      const changes = [{ source: file.path as string | null, target }];
+      const changes: Plan["previews"][number]["changes"] = [
+        { source: file.path, target, note: version?.note },
+      ];
       operations.push({
         type: "move",
         source: file.path,
         target,
         fingerprint: { dev: 0, ino: 0, size: file.size, mtimeMs: 0 },
       });
-      if (options.nfo) {
+      if (options.nfo && !version) {
         const nfo = `${folder}/${stem}.nfo`;
         operations.push({ type: "write", target: nfo, content: "" });
         changes.push({ source: null, target: nfo });

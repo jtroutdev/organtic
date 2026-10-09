@@ -157,27 +157,36 @@ test("unchanged names can still create NFO, and an NFO already beside the video 
   assert.deepEqual(moving.operations.map((op) => op.type), ["move"]);
 });
 
-test("two copies of a film in different formats share one written NFO", async (t) => {
+test("a second copy of a film is named as another version and shares the written NFO", async (t) => {
   const f = await fixture(t);
   await fs.writeFile(path.join(f.dir, "Arrival.2016.720p.avi"), "another copy");
   const { files } = await scanPaths([f.dir]);
+  const names = (plan: Awaited<ReturnType<typeof createPlan>>) =>
+    plan.operations.map((op) => `${op.type} ${path.basename(op.target)}`).sort();
   const plan = await planInPlace(files.map((file) => ({ file, media })), { nfo: true });
   assert.deepEqual(plan.errors, []);
+  assert.deepEqual(names(plan), [
+    "move Arrival (2016) - 720p.avi",
+    "move Arrival (2016).mkv",
+    "write Arrival (2016).nfo",
+  ]);
   assert.deepEqual(
-    plan.operations.map((op) => `${op.type} ${path.basename(op.target)}`).sort(),
-    ["move Arrival (2016).avi", "move Arrival (2016).mkv", "write Arrival (2016).nfo"],
+    plan.previews.map((item) => item.changes[0]!.note),
+    [undefined, 'named as another version of "Arrival.2016.1080p.mkv"'],
   );
-  // When the later copy brings its own NFO, that one is kept and nothing is written.
+  // The lesser copy's own NFO follows it; the order the files are given in does not matter.
   await fs.writeFile(path.join(f.dir, "Arrival.2016.720p.nfo"), "its own metadata");
   const kept = await planInPlace(
     files.toReversed().map((file) => ({ file, media })),
     { nfo: true },
   );
   assert.deepEqual(kept.errors, []);
-  assert.deepEqual(
-    kept.operations.filter((op) => /\.nfo$/.test(op.target)).map((op) => op.type),
-    ["move"],
-  );
+  assert.deepEqual(names(kept), [
+    "move Arrival (2016) - 720p.avi",
+    "move Arrival (2016) - 720p.nfo",
+    "move Arrival (2016).mkv",
+    "write Arrival (2016).nfo",
+  ]);
 });
 
 test("recovers an incomplete final journal record without corrupting later events", async (t) => {
@@ -323,13 +332,63 @@ test("a file in the way of a planned folder blocks the plan", async (t) => {
   assert.match(plan.errors.join(), /in the way/);
 });
 
-test("two files resolving to one episode are reported, not overwritten", async (t) => {
-  const lib = await library(t, ["a/Severance.S01E01.mkv", "b/Severance.S01E01.mkv"]);
+test("two different episodes resolving to one are reported, not overwritten", async (t) => {
+  const lib = await library(t, ["a/Severance.S01E01.mkv", "b/Severance.S01E02.mkv"]);
   const plan = await createPlan(
     lib.files.map((file) => ({ file, media: episode(1, "Pilot") })),
   );
-  assert.match(plan.errors.join(), /same destination/);
+  assert.match(
+    plan.errors.join(),
+    /same destination: "a.Severance\.S01E01\.mkv" and "b.Severance\.S01E02\.mkv"/,
+  );
   await assert.rejects(applyPlan(plan, lib.journals));
+});
+
+test("copies of one episode are named as versions, the best keeping the plain name", async (t) => {
+  const lib = await library(t, [
+    "sd/Severance.S01E01.720p.WEB-DL.x264.mkv",
+    "sd/Severance.S01E01.720p.WEB-DL.x264.en.srt",
+    "hd/Severance.S01E01.1080p.WEB-DL.x265.mkv",
+    // Nothing in these names tells them apart from the best copy.
+    "Severance S01-S02 1080p x265/Season 1/Severance 101 older rip.avi",
+    "plain/Severance - One.avi",
+    "same/Severance.S01E01.mkv",
+    "twin/Severance.S01E01.mkv",
+  ]);
+  const one = (name: string) => ({ file: lib.byName(name), media: episode(1, "One") });
+  const plan = await createPlan(
+    [
+      "sd/Severance.S01E01.720p.WEB-DL.x264.mkv",
+      "hd/Severance.S01E01.1080p.WEB-DL.x265.mkv",
+      "Severance S01-S02 1080p x265/Season 1/Severance 101 older rip.avi",
+      "plain/Severance - One.avi",
+    ].map(one),
+    { nfo: true },
+  );
+  assert.deepEqual(plan.errors, []);
+  // Same size and nothing to tell them apart: named, and pointed out.
+  const twins = await createPlan([one("same/Severance.S01E01.mkv"), one("twin/Severance.S01E01.mkv")]);
+  assert.deepEqual(twins.errors, []);
+  assert.deepEqual(
+    twins.previews.map((item) => [path.basename(item.target), item.changes[0]!.note]),
+    [
+      ["Severance (2022) - S01E01 - One.mkv", undefined],
+      ["Severance (2022) - S01E01 - One - Copy 2.mkv", 'likely an exact duplicate of "Severance.S01E01.mkv"'],
+    ],
+  );
+  const season = "Severance (2022) {tmdb-95396}/Season 01";
+  await applyPlan(plan, lib.journals);
+  assert.deepEqual(
+    (await tree(lib.dir)).filter((name) => name.startsWith(season)).map((name) => path.basename(name)),
+    [
+      "Severance (2022) - S01E01 - One - 720p x264.en.srt",
+      "Severance (2022) - S01E01 - One - 720p x264.mkv",
+      "Severance (2022) - S01E01 - One - Copy 2.avi",
+      "Severance (2022) - S01E01 - One - Copy 3.avi",
+      "Severance (2022) - S01E01 - One.mkv",
+      "Severance (2022) - S01E01 - One.nfo",
+    ],
+  );
 });
 
 test("falls back to a guarded rename where hard links are unsupported", async (t) => {

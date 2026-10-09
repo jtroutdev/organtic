@@ -202,7 +202,8 @@ export interface Plan {
     source: string;
     target: string;
     title: string;
-    changes: { source: string | null; target: string; artwork?: boolean }[];
+    /** `note` explains a name the file did not get from its match alone, such as a version label. */
+    changes: { source: string | null; target: string; artwork?: boolean; note?: string }[];
   }[];
   /** The same problems as `errors`, tied to the file or destination they concern. */
   issues: PlanIssue[];
@@ -325,6 +326,8 @@ export interface PreviewItem {
   to: string;
   from: string | null;
   problem: string | null;
+  /** Why the name differs from the plain one, for a copy named as another version. */
+  note: string | null;
 }
 
 export interface PreviewGroup {

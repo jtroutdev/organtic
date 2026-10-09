@@ -241,7 +241,7 @@ const options = [
               <span v-if="row.isNew" class="tag">new folder</span>
               <template v-if="row.item">
                 <button
-                  v-if="row.item.problem"
+                  v-if="row.item.problem || row.item.note"
                   class="btn"
                   type="button"
                   :disabled="store.busy"
@@ -257,7 +257,8 @@ const options = [
                       : row.item.kind === "artwork"
                         ? "downloaded when the batch is applied"
                         : "new metadata file"
-                  }}<template v-if="row.item.problem"> · {{ row.item.problem }}</template></span
+                  }}<template v-if="row.item.note"> · {{ row.item.note }}</template
+                  ><template v-if="row.item.problem"> · {{ row.item.problem }}</template></span
                 >
               </template>
             </div>
