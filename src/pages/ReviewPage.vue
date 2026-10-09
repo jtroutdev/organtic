@@ -156,6 +156,78 @@ async function confirmAll() {
   await run(api.confirmSuggested);
   announce("Suggested groups confirmed.");
 }
+// Ticked groups are merged or removed together. Only those in the current view count, so
+// nothing out of sight is changed.
+const tickedKeys = ref<string[]>([]);
+const ticked = computed(() =>
+  groups.value.filter((item) => tickedKeys.value.includes(item.key)),
+);
+// Where a shift-click range starts: the last group ticked or unticked.
+let anchor: string | null = null;
+function tick(key: string, on: boolean, range: boolean) {
+  const keys = groups.value.map((item) => item.key);
+  const from = range && anchor ? keys.indexOf(anchor) : -1;
+  const at = keys.indexOf(key);
+  const span = from < 0 ? [key] : keys.slice(Math.min(from, at), Math.max(from, at) + 1);
+  const rest = tickedKeys.value.filter((item) => !span.includes(item));
+  tickedKeys.value = on ? [...rest, ...span] : rest;
+  anchor = key;
+}
+// A plain click opens a group; with Ctrl or Shift held it ticks instead.
+function open(event: MouseEvent, key: string) {
+  if (event.shiftKey) tick(key, true, true);
+  else if (event.ctrlKey || event.metaKey) tick(key, !tickedKeys.value.includes(key), false);
+  else store.selected = key;
+}
+// The merge keeps one ticked group: the one picked, else the one on screen, else the first matched.
+const kept = ref<string | null>(null);
+const mergeInto = computed({
+  get: () =>
+    (
+      ticked.value.find((item) => item.key === kept.value) ??
+      ticked.value.find((item) => item.key === group.value?.key) ??
+      ticked.value.find((item) => item.chosen != null) ??
+      ticked.value[0]
+    )?.key ?? "",
+  set: (key) => (kept.value = key),
+});
+function untick() {
+  tickedKeys.value = [];
+  kept.value = null;
+}
+async function mergeTicked() {
+  if (store.busy || ticked.value.length < 2) return;
+  const count = ticked.value.length;
+  const to = mergeInto.value;
+  const ids = ticked.value
+    .filter((item) => item.key !== to)
+    .flatMap((item) => item.files.map((file) => file.id));
+  const target = await run(() => api.moveFiles(ids, to));
+  if (!target) return;
+  untick();
+  store.selected = target;
+  announce(`Merged ${plural(count, "group")} into ${nameOf(group.value!)}.`);
+  await focusOn(".detail");
+}
+async function removeTicked() {
+  if (store.busy) return;
+  const keys = ticked.value.map((item) => item.key);
+  const all = store.queue.groups;
+  const at = all.findIndex((item) => item.key === group.value?.key);
+  if (keys.includes(all[at]?.key ?? "")) {
+    const rest = [...all.slice(at + 1), ...all.slice(0, at)].filter(
+      (item) => !keys.includes(item.key),
+    );
+    store.selected =
+      (rest.find((item) => item.status !== "confirmed") ?? rest[0])?.key ?? null;
+  }
+  await run(async () => {
+    for (const key of keys) await api.remove(key);
+  });
+  untick();
+  announce(`Removed ${plural(keys.length, "group")} from the queue.`);
+  await focusOn(".detail");
+}
 // Splitting and merging: ticked files, or the whole group, move to another group or a new one.
 const NEW_GROUP = "";
 const picked = ref<string[]>([]);
@@ -395,6 +467,19 @@ const search = () =>
       <SplitView :current="group?.key" list="Groups" detail="Selected group" :aria-busy="group?.status === 'matching'">
         <template #head>
           <div class="chips">
+            <label v-if="groups.length > 1" class="pick">
+              <input
+                type="checkbox"
+                aria-label="Select all groups"
+                :checked="ticked.length === groups.length"
+                :indeterminate="ticked.length > 0 && ticked.length < groups.length"
+                @change="
+                  tickedKeys = ($event.target as HTMLInputElement).checked
+                    ? groups.map((item) => item.key)
+                    : []
+                "
+              />
+            </label>
             <button
               v-for="[id, label] in filters"
               :key="id"
@@ -408,23 +493,59 @@ const search = () =>
           </div>
         </template>
         <template #side>
-          <ListItem
-            v-for="item in groups"
-            :key="item.key"
-            :current="item.key === group?.key"
-            :tone="STATUS[item.status][0]"
-            :note="STATUS[item.status][1]"
-            :count="item.files.length"
-            unit="files"
-            @click="store.selected = item.key"
-          >
-            <template v-if="item.chosen != null">
-              {{ item.candidates[item.chosen]?.title }}
-              <span class="muted">({{ item.candidates[item.chosen]?.year ?? "year unknown" }})</span>
-            </template>
-            <template v-else>{{ item.parsedTitle || "Unnamed" }}</template>
-          </ListItem>
+          <div v-for="item in groups" :key="item.key" class="tickrow">
+            <label class="pick">
+              <input
+                type="checkbox"
+                :aria-label="`Select ${nameOf(item)}`"
+                :checked="tickedKeys.includes(item.key)"
+                :tabindex="item.key === group?.key ? 0 : -1"
+                @click="
+                  tick(item.key, ($event.target as HTMLInputElement).checked, $event.shiftKey)
+                "
+              />
+            </label>
+            <ListItem
+              :current="item.key === group?.key"
+              :tone="STATUS[item.status][0]"
+              :note="STATUS[item.status][1]"
+              :count="item.files.length"
+              unit="files"
+              @click="open($event, item.key)"
+            >
+              <template v-if="item.chosen != null">
+                {{ item.candidates[item.chosen]?.title }}
+                <span class="muted">({{ item.candidates[item.chosen]?.year ?? "year unknown" }})</span>
+              </template>
+              <template v-else>{{ item.parsedTitle || "Unnamed" }}</template>
+            </ListItem>
+          </div>
         </template>
+
+        <form
+          v-if="ticked.length"
+          class="row numbers movebar"
+          aria-label="Merge or remove the selected groups"
+          @submit.prevent="mergeTicked"
+          @keydown.esc="untick"
+        >
+          <strong>{{ plural(ticked.length, "group") }} selected</strong>
+          <template v-if="ticked.length > 1">
+            <label
+              >Merge into
+              <select v-model="mergeInto" class="input wide">
+                <option v-for="item in ticked" :key="item.key" :value="item.key">
+                  {{ nameOf(item) }}
+                </option>
+              </select></label
+            >
+            <button class="btn primary" type="submit" :disabled="store.busy">Merge</button>
+          </template>
+          <button class="btn" type="button" :disabled="store.busy" @click="removeTicked">
+            Remove from queue
+          </button>
+          <button class="btn quiet" type="button" @click="untick">Clear selection</button>
+        </form>
 
         <template v-if="group">
           <div class="summary">
