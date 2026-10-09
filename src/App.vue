@@ -153,17 +153,19 @@ watch(
       </div>
     </header>
     <main id="content" tabindex="-1">
-      <div v-if="!api.desktop" class="banner ask">
-        <span
-          >This browser preview uses example files and a canned catalogue. Open
-          the desktop app to work with your own files.</span
-        >
-      </div>
-      <div v-if="store.error" class="banner bad" role="alert">
-        <span>{{ store.error }}</span>
-        <button class="btn" type="button" @click="store.error = ''">
-          Dismiss
-        </button>
+      <div class="notices">
+        <div v-if="!api.desktop" class="banner ask">
+          <span
+            >This browser preview uses example files and a canned catalogue. Open
+            the desktop app to work with your own files.</span
+          >
+        </div>
+        <div v-if="store.error" class="banner bad" role="alert">
+          <span>{{ store.error }}</span>
+          <button class="btn" type="button" @click="store.error = ''">
+            Dismiss
+          </button>
+        </div>
       </div>
       <component :is="pages[store.page]" />
     </main>
