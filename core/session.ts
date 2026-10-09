@@ -178,6 +178,8 @@ export class Session {
       label =
         parsed.episode === null && parsed.airDate
           ? `${parsed.airDate}${code ? ` → ${code}` : ""}`
+          : parsed.episode === null && parsed.episodeTitle && code
+          ? `“${parsed.episodeTitle}” → ${code}`
           : episode === null
           ? "no number"
           : `${parsed.season === null && media ? `#${parsed.episode} → ` : ""}${season === null ? "" : `S${two(season)}`}E${two(episode)}${end ? `-E${two(end)}` : ""}`;
@@ -488,7 +490,13 @@ export class Session {
         "The last episode must come after the first, at most 20 later.",
       );
     // Numbers given by hand replace a date read from the name.
-    Object.assign(file.parsed, { season, episode, episodeEnd, airDate: null });
+    Object.assign(file.parsed, {
+      season,
+      episode,
+      episodeEnd,
+      airDate: null,
+      episodeTitle: null,
+    });
     if (group.chosen === null) this.changed();
     else await this.resolve(group);
   }
@@ -630,7 +638,8 @@ export class Session {
         (file) =>
           group.kind === "movie" ||
           file.parsed.episode !== null ||
-          file.parsed.airDate !== null,
+          file.parsed.airDate !== null ||
+          file.parsed.episodeTitle !== null,
       );
       const resolved = await this.providers.resolveMany(
         candidate,
@@ -639,6 +648,8 @@ export class Session {
           episode: parsed.episode ?? 1,
           episodeEnd: parsed.episodeEnd,
           airDate: parsed.episode === null ? parsed.airDate : null,
+          title: parsed.episodeTitle,
+          byTitle: parsed.episode === null && parsed.airDate === null,
         })),
         this.settings.language,
         group.ordering
@@ -665,9 +676,29 @@ export class Session {
     group.results = results;
     group.status = status;
     const problems = [...results.values()].filter((r) => "error" in r).length;
-    const absolute = files.some(
+    const seasonless = files.filter(
       (file) => group.kind === "tv" && file.parsed.season === null && file.parsed.episode !== null,
     );
+    // A season-less number the lookup read as season and episode run together, e.g. 812.
+    const joined = seasonless.filter((file) => {
+      const result = results.get(file.id);
+      return (
+        result &&
+        "media" in result &&
+        result.media.season! * 100 + result.media.episode! === file.parsed.episode
+      );
+    });
+    const absolute = seasonless.length > joined.length;
+    const named = files.filter((file) => {
+      const result = results.get(file.id);
+      return (
+        group.kind === "tv" &&
+        file.parsed.episode === null &&
+        file.parsed.airDate === null &&
+        result &&
+        "media" in result
+      );
+    }).length;
     group.reason = [
       status === "confirmed"
         ? "You confirmed this match."
@@ -680,6 +711,12 @@ export class Session {
       status !== "confirmed" ? group.missed : "",
       absolute
         ? "Episode numbers had no season and were counted from the start of the show."
+        : "",
+      joined.length
+        ? `Numbers like ${joined[0]!.parsed.episode} were read as season and episode run together.`
+        : "",
+      named
+        ? `${named} file${named === 1 ? " was" : "s were"} matched by episode name, having no number.`
         : "",
       this.numberingNote(group, candidate, results),
       group.ordering

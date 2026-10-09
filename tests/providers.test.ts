@@ -180,6 +180,54 @@ test("resolves a batch with one request per season, including absolute and multi
   assert.deepEqual(calls, ["/3/tv/7", "/3/tv/7/season/1", "/3/tv/7/season/2", "/3/tv/7/season/5"]);
 });
 
+test("finds episodes by name, and reads 812 as season 8 episode 12 where that fits", async () => {
+  const names: Record<number, string[]> = {
+    1: ["Pilot", "Homer's Odyssey", "Who Shot Mr. Burns? (1)"],
+    2: ["Who Shot Mr. Burns? (2)", "Lisa the Vegetarian", "Homer's Enemy"],
+  };
+  const providers = new Providers({
+    fetcher: async (url) => {
+      if (url.pathname === "/3/tv/7")
+        return Response.json({
+          seasons: [1, 2].map((season) => ({ season_number: season, episode_count: 3 })),
+        });
+      const season = Number(url.pathname.split("/").at(-1));
+      if (!names[season]) return new Response("", { status: 404 });
+      return Response.json({
+        episodes: names[season].map((name, index) => ({
+          id: season * 10 + index,
+          episode_number: index + 1,
+          name,
+        })),
+      });
+    },
+  });
+  providers.setToken("test");
+  const show: Candidate = { provider: "tmdb", kind: "tv", id: 7, title: "Show", year: 2024, overview: "" };
+  const results = await providers.resolveMany(show, [
+    { season: null, episode: 1, title: "Lisa the Vegeterian", byTitle: true },
+    { season: null, episode: 1, title: "Bart Gets an F", byTitle: true },
+    { season: null, episode: 1, title: "Who Shot Mr Burns", byTitle: true },
+    { season: null, episode: 1, title: null, byTitle: true },
+    // 203 is past the six episodes, so it is season 2, episode 3.
+    { season: null, episode: 203 },
+    // Numbers that find nothing give way to the name; numbers that work are trusted.
+    { season: 2, episode: 9, title: "Homers Odyssey" },
+    { season: 1, episode: 1, title: "Homer's Enemy" },
+    { season: 2, episode: 9, title: "Nothing Like It" },
+  ]);
+  assert.deepEqual(titles(results), [
+    "S2E2 Lisa the Vegetarian",
+    "No episode of this show is named like “Bart Gets an F”.",
+    "“Who Shot Mr Burns” fits more than one episode (S1E3 “Who Shot Mr. Burns? (1)”, S2E1 “Who Shot Mr. Burns? (2)”). Set the season and episode for this file.",
+    "No episode number was found in this filename.",
+    "S2E3 Homer's Enemy",
+    "S1E2 Homer's Odyssey",
+    "S1E1 Pilot",
+    "Season 2 episode 9 was not found for this show.",
+  ]);
+});
+
 test("resolves a TVmaze batch from a single episode listing", async () => {
   let calls = 0;
   const providers = new Providers({

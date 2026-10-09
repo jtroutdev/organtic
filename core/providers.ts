@@ -14,8 +14,9 @@ import type {
 
 import { placeEpisode } from "./animeMap.ts";
 import type { AnimeMap, AnimeMapping, EpisodeRule } from "./animeMap.ts";
-import { normalizeTitle } from "./parse.ts";
+import { normalizeTitle, titleSimilarity } from "./parse.ts";
 
+const NO_NUMBER = "No episode number was found in this filename.";
 const stripHtml = (value: unknown) =>
   String(value || "")
     .replace(/<[^>]*>/g, "")
@@ -822,6 +823,7 @@ export class Providers {
           throw new Error(
             "Kitsu cannot look an episode up by date. Set the season and episode for this file.",
           );
+        if (request.byTitle) throw new Error(NO_NUMBER);
         const { episode } = request;
         const last = request.episodeEnd ?? episode;
         if (!Number.isInteger(episode) || episode < 1 || last < episode || last - episode > 20)
@@ -1165,6 +1167,7 @@ export class Providers {
           error:
             "A file named by date can only be looked up in aired order. Switch this group back to aired order.",
         };
+      if (request.byTitle) return { error: NO_NUMBER };
       let { season, episode } = request;
       let offset = 0;
       if (season === null) {
@@ -1292,85 +1295,143 @@ export class Providers {
       ? await this.seasonCounts(candidate)
       : [];
     const seasons = new Map<number, Promise<SeasonListing>>();
-    const results: ResolveResult[] = [];
-    for (let request of requests) {
-      try {
-        let { season, episode } = request;
-        let offset = 0;
-        if (request.airDate) {
-          const aired = await this.airedOn(candidate, request.airDate, language);
-          if (!aired.length)
-            throw new Error(
-              `No episode of this show is listed as airing on ${request.airDate}.`,
-            );
-          if (aired.length > 1)
-            throw new Error(
-              `${aired.length} episodes aired on ${request.airDate} (${aired
-                .map((item) => `S${item.season}E${item.number}`)
-                .join(", ")}). Set the season and episode for this file.`,
-            );
-          season = aired[0]!.season;
-          episode = aired[0]!.number;
-          request = { season, episode };
-        }
-        if (season === null) {
-          for (const [number, count] of counts) {
-            if (episode - offset <= count) {
-              season = number;
-              break;
-            }
-            offset += count;
-          }
-          if (season === null)
-            throw new Error(
-              `Episode ${episode} is beyond the ${offset} episodes listed for this show.`,
-            );
-          episode -= offset;
-        }
-        const last = (request.episodeEnd ?? request.episode) - offset;
-        if (
-          !Number.isInteger(season) ||
-          season < 0 ||
-          !Number.isInteger(episode) ||
-          episode < 1 ||
-          last < episode ||
-          last - episode > 20
-        )
-          throw new Error("Enter a valid season and episode number.");
-        let listed = seasons.get(season);
-        if (!listed)
-          seasons.set(
-            season,
-            (listed = this.seasonEpisodes(candidate, season, language)),
+    const listing = (season: number) => {
+      let listed = seasons.get(season);
+      if (!listed)
+        seasons.set(
+          season,
+          (listed = this.seasonEpisodes(candidate, season, language)),
+        );
+      return listed;
+    };
+    let everything: Promise<Episode[]> | undefined;
+    /** The one episode of the show whose name is clearly the closest to `title`. */
+    const named = async (title: string): Promise<Episode> => {
+      everything ??= (async () => {
+        const all: Episode[] = [];
+        for (const [number] of await this.seasonCounts(candidate))
+          all.push(...(await listing(number)).episodes);
+        return all;
+      })();
+      const [best, next] = (await everything)
+        .map((item) => ({ item, score: titleSimilarity(title, item.title) }))
+        .sort((a, b) => b.score - a.score);
+      if (!best || best.score < 0.8)
+        throw new Error(`No episode of this show is named like “${title}”.`);
+      if (next && best.score - next.score < 0.05)
+        throw new Error(
+          `“${title}” fits more than one episode (${[best, next]
+            .map(({ item }) => `S${item.season}E${item.number} “${item.title}”`)
+            .join(", ")}). Set the season and episode for this file.`,
+        );
+      return best.item;
+    };
+    const place = async (request: EpisodeRequest): Promise<Media> => {
+      let { season, episode } = request;
+      let offset = 0;
+      if (request.byTitle) {
+        if (!request.title) throw new Error(NO_NUMBER);
+        const found = await named(request.title);
+        season = found.season;
+        episode = found.number;
+        request = { season, episode };
+      }
+      if (request.airDate) {
+        const aired = await this.airedOn(candidate, request.airDate, language);
+        if (!aired.length)
+          throw new Error(
+            `No episode of this show is listed as airing on ${request.airDate}.`,
           );
-        const { episodes: all, posterUrl } = await listed;
-        const found: Episode[] = [];
-        for (let number = episode; number <= last; number++) {
-          const match = all.find((item) => item.number === number);
-          if (!match)
-            throw new Error(
-              `Season ${season} episode ${number} was not found for this show.`,
-            );
-          found.push(match);
+        if (aired.length > 1)
+          throw new Error(
+            `${aired.length} episodes aired on ${request.airDate} (${aired
+              .map((item) => `S${item.season}E${item.number}`)
+              .join(", ")}). Set the season and episode for this file.`,
+          );
+        season = aired[0]!.season;
+        episode = aired[0]!.number;
+        request = { season, episode };
+      }
+      if (season === null) {
+        for (const [number, count] of counts) {
+          if (episode - offset <= count) {
+            season = number;
+            break;
+          }
+          offset += count;
         }
-        const first = found[0]!;
-        results.push({
-          media: {
-            ...candidate,
-            season,
-            episode,
-            ...(last > episode ? { episodeEnd: last } : {}),
-            episodeTitle: found.map((item) => item.title).join(" & "),
-            episodeId: first.id,
-            overview: first.overview,
-            aired: first.aired,
-            seasonPosterUrl: posterUrl ?? seasonPosters.get(season),
-          },
-        });
+        // "812" may be season 8, episode 12 instead: when the show has no episode 812, or
+        // when the name in the file is that episode's.
+        const joined = { season: Math.floor(episode / 100), episode: episode % 100 };
+        if (
+          joined.season &&
+          joined.episode &&
+          !request.episodeEnd &&
+          (season === null ||
+            (request.title &&
+              (await listing(joined.season).catch(() => null))?.episodes.some(
+                (item) =>
+                  item.number === joined.episode &&
+                  titleSimilarity(request.title!, item.title) >= 0.8,
+              )))
+        ) {
+          ({ season, episode } = joined);
+          offset = 0;
+          request = joined;
+        } else if (season === null)
+          throw new Error(
+            `Episode ${episode} is beyond the ${offset} episodes listed for this show.`,
+          );
+        else episode -= offset;
+      }
+      const last = (request.episodeEnd ?? request.episode) - offset;
+      if (
+        !Number.isInteger(season) ||
+        season < 0 ||
+        !Number.isInteger(episode) ||
+        episode < 1 ||
+        last < episode ||
+        last - episode > 20
+      )
+        throw new Error("Enter a valid season and episode number.");
+      const { episodes: all, posterUrl } = await listing(season);
+      const found: Episode[] = [];
+      for (let number = episode; number <= last; number++) {
+        const match = all.find((item) => item.number === number);
+        if (!match)
+          throw new Error(
+            `Season ${season} episode ${number} was not found for this show.`,
+          );
+        found.push(match);
+      }
+      const first = found[0]!;
+      return {
+        ...candidate,
+        season,
+        episode,
+        ...(last > episode ? { episodeEnd: last } : {}),
+        episodeTitle: found.map((item) => item.title).join(" & "),
+        episodeId: first.id,
+        overview: first.overview,
+        aired: first.aired,
+        seasonPosterUrl: posterUrl ?? seasonPosters.get(season),
+      };
+    };
+    const results: ResolveResult[] = [];
+    for (const request of requests) {
+      try {
+        results.push({ media: await place(request) });
       } catch (error) {
-        results.push({
-          error: error instanceof Error ? error.message : String(error),
-        });
+        try {
+          // Numbers that find nothing may be wrong where the name in the file is right.
+          if (!request.title || request.byTitle || request.airDate) throw error;
+          const { season, number } = await named(request.title);
+          results.push({ media: await place({ season, episode: number }) });
+        } catch {
+          results.push({
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
     }
     return results;

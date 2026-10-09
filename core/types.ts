@@ -12,6 +12,8 @@ export interface ParsedName {
   episode: number | null;
   /** Last episode of a multi-episode file. */
   episodeEnd: number | null;
+  /** The episode's name as the filename gives it, used when the numbers are missing or wrong. */
+  episodeTitle: string | null;
   /** "2024-03-15" for a file named by the day it aired instead of by number. */
   airDate: string | null;
   releaseGroup: string | null;
@@ -168,6 +170,10 @@ export interface EpisodeRequest {
   episodeEnd?: number | null;
   /** Find the episode by the day it aired; `season` and `episode` are then ignored. */
   airDate?: string | null;
+  /** The episode's name as the filename gives it; a fallback when the numbers find nothing. */
+  title?: string | null;
+  /** Find the episode by `title` alone; `season` and `episode` are then ignored. */
+  byTitle?: boolean;
 }
 
 export type ResolveResult = { media: Media } | { error: string };

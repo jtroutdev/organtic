@@ -6,6 +6,44 @@ import type {
   RankedCandidate,
 } from "./types.ts";
 
+const folderOf = (path: string) => path.replace(/[\\/][^\\/]*$/, "");
+
+/**
+ * A file with no episode marker, named after a show whose numbered episodes sit in the same
+ * folder, is one of its episodes: "Show 812 - Title" or "Show - Title" beside "Show S08E11".
+ * What follows the show's name becomes its numbers or its episode name.
+ */
+function adoptUnnumbered(files: MediaFile[]) {
+  const shows = files
+    .filter(({ parsed }) => !parsed.skip && parsed.kind === "tv" && parsed.title)
+    .map((file) => ({
+      title: file.parsed.title,
+      name: normalizeTitle(file.parsed.title),
+      folder: folderOf(file.path),
+    }));
+  for (const file of files) {
+    const { parsed } = file;
+    if (parsed.skip || parsed.kind !== "movie" || parsed.year !== null) continue;
+    const own = normalizeTitle(parsed.title);
+    const show = shows
+      .filter(
+        (item) =>
+          item.folder === folderOf(file.path) && own.startsWith(`${item.name} `),
+      )
+      .sort((a, b) => b.name.length - a.name.length)[0];
+    if (!show) continue;
+    const rest = own.slice(show.name.length + 1);
+    const joined = /^([1-9]\d?)(?!00)(\d{2})(?: (.+))?$/.exec(rest);
+    Object.assign(parsed, {
+      kind: "tv",
+      title: show.title,
+      season: joined ? Number(joined[1]) : null,
+      episode: joined ? Number(joined[2]) : null,
+      episodeTitle: joined ? (joined[3] ?? null) : rest,
+    });
+  }
+}
+
 /**
  * Collects files that should share one match: every episode of a show, or the files of
  * one movie. Files flagged as samples, trailers or extras are returned separately.
@@ -16,6 +54,7 @@ export function groupFiles(files: MediaFile[]): {
 } {
   const groups = new Map<string, MediaGroup>();
   const skipped: MediaFile[] = [];
+  adoptUnnumbered(files);
   for (const file of files) {
     const { parsed } = file;
     if (parsed.skip) {
