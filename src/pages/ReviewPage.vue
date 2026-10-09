@@ -760,6 +760,7 @@ const search = () =>
                     type="checkbox"
                     aria-label="Select all files"
                     :checked="allPicked"
+                    :indeterminate="pickedHere.length > 0 && !allPicked"
                     @change="pickAll(($event.target as HTMLInputElement).checked)"
                   />
                   {{ plural(group.files.length, "file")
