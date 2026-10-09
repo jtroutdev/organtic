@@ -334,11 +334,14 @@ export async function createPlan(
         leaving.kinds.add(media.kind);
         departures.set(parent, leaving);
       }
-      // An NFO the file already had is kept rather than written over.
+      // An NFO the file already had is kept rather than written over, as is one already
+      // waiting under the new name, which is what a correctly named video has beside it.
+      const nfoName = `${newStem}.nfo`;
+      hasNfo ||= (await list(folder)).some((name) => key(name) === key(nfoName));
       if (options.nfo && !hasNfo)
         add({
           type: "write",
-          target: path.join(folder, `${newStem}.nfo`),
+          target: path.join(folder, nfoName),
           content: makeNfo(media),
         });
       // Artwork belongs to a title's own folder, so it needs a template that makes one.

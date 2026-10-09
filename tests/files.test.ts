@@ -137,7 +137,7 @@ test("scanner excludes symlinks and unrelated files", async (t) => {
   assert.equal(result.files.length, 1);
   assert.equal(result.skipped.length, 1);
 });
-test("NFO collision blocks video changes, and unchanged names can still create NFO", async (t) => {
+test("unchanged names can still create NFO, and an NFO already beside the video is kept", async (t) => {
   const f = await fixture(t);
   await fs.rename(f.source, path.join(f.dir, "Arrival (2016).mkv"));
   const { files } = await scanPaths([f.dir]);
@@ -145,8 +145,16 @@ test("NFO collision blocks video changes, and unchanged names can still create N
   assert.equal(plan.operations.length, 1);
   assert.deepEqual(plan.errors, []);
   await applyPlan(plan, f.journals);
-  const conflict = await planInPlace([{ file: files[0]!, media }], { nfo: true });
-  assert.match(conflict.errors.join(), /already exists/);
+  // Planning the same library again has nothing to write and nothing to clash with.
+  const again = await planInPlace([{ file: files[0]!, media }], { nfo: true });
+  assert.deepEqual(again.operations, []);
+  assert.deepEqual(again.issues, []);
+  assert.deepEqual(again.errors, ["These files already have their proposed names."]);
+  // A video on its way to a name whose NFO is already there moves without writing another.
+  await fs.rename(path.join(f.dir, "Arrival (2016).mkv"), f.source);
+  const moving = await planInPlace([{ file: f.file, media }], { nfo: true });
+  assert.deepEqual(moving.errors, []);
+  assert.deepEqual(moving.operations.map((op) => op.type), ["move"]);
 });
 
 test("recovers an incomplete final journal record without corrupting later events", async (t) => {
