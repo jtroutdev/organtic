@@ -2,6 +2,52 @@ import type { ParsedName, SkipReason } from "./types.ts";
 
 const TECHNICAL =
   /\b(?:\d{3,4}x\d{3,4}|480p|576p|720p|1080[pi]|2160p|4k|uhd|bluray|blu-ray|bdrip|brrip|bdremux|remux|web[- ]?dl|webrip|hdtv|dvdrip|hdrip|x26[45]|h ?26[45]|hevc|av1|xvid|divx)\b/i;
+// What a release name says about its picture, best first within each kind.
+const RESOLUTION = /\b(?:\d{3,4}x(\d{3,4})|(480|576|720|1080|2160)([pi])|(4k|uhd))\b/i;
+const SOURCES: [RegExp, string][] = [
+  [/\b(?:bd)?remux\b/i, "Remux"],
+  [/\b(?:blu-?ray|bdrip|brrip)\b/i, "BluRay"],
+  [/\bweb[- .]?dl\b/i, "WEB-DL"],
+  [/\bwebrip\b/i, "WEBRip"],
+  [/\bhdtv\b/i, "HDTV"],
+  [/\bhdrip\b/i, "HDRip"],
+  [/\bdvdrip\b/i, "DVDRip"],
+];
+const CODECS: [RegExp, string][] = [
+  [/\bav1\b/i, "AV1"],
+  [/\b(?:x265|h[ .]?265|hevc)\b/i, "x265"],
+  [/\b(?:x264|h[ .]?264)\b/i, "x264"],
+  [/\bxvid\b/i, "XviD"],
+  [/\bdivx\b/i, "DivX"],
+];
+
+export interface Quality {
+  /** Resolution, source and codec, higher is better; 0 where the name does not say. */
+  rank: [number, number, number];
+  /** The same three as they would be written in a filename. */
+  labels: [string | null, string | null, string | null];
+}
+
+/** Reads resolution, source and codec from release names; earlier names win over later ones. */
+export function readQuality(...names: string[]): Quality {
+  const quality: Quality = { rank: [0, 0, 0], labels: [null, null, null] };
+  for (const name of names) {
+    const resolution = RESOLUTION.exec(name);
+    if (resolution && !quality.labels[0]) {
+      const height = Number(resolution[1] ?? resolution[2] ?? 2160);
+      quality.rank[0] = height;
+      quality.labels[0] = `${height}${resolution[3]?.toLowerCase() ?? "p"}`;
+    }
+    for (const [slot, kinds] of [[1, SOURCES], [2, CODECS]] as const) {
+      const found = kinds.findIndex(([pattern]) => pattern.test(name));
+      if (found < 0 || quality.labels[slot]) continue;
+      quality.rank[slot] = kinds.length - found;
+      quality.labels[slot] = kinds[found]![1];
+    }
+  }
+  return quality;
+}
+
 // S01E02, S01E02E03, S01E02-E03, S01E02-03 (but not S01E02-720p); also S01 E02, S01-E02, S01Ep02
 const SEASON_EPISODE =
   /\bS(\d{1,2})(?: ?- ?| )?E(?:p(?:isode)?)? ?(\d{1,4})((?: ?-? ?E\d{1,4}|-\d{1,4}(?![\dpi]))*)/i;

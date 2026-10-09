@@ -123,13 +123,16 @@ test("confirming, previewing and applying renames files and keeps the rest of th
   session.confirmSuggested();
   assert.equal(group("Arrival").status, "confirmed");
 
-  // Both Arrival files resolve to one name; the clash is tied to the files involved.
+  // Both Arrival files resolve to one name; the lesser copy is named as another version.
   const clash = await session.preview();
-  assert.equal(clash.blocked, true);
+  assert.equal(clash.blocked, false);
   const arrival = clash.groups.find((g) => g.title === "Arrival")!;
   assert.deepEqual(
-    arrival.items.map((item) => [item.from, /same destination/.test(item.problem ?? "")]),
-    [["Arrival.2016.1080p.mkv", true], ["Arrival.2016.2160p.mkv", true]],
+    arrival.items.map((item) => [item.from, item.to.split("/").at(-1), item.problem, item.note]),
+    [
+      ["Arrival.2016.1080p.mkv", "Arrival (2016) - 1080p.mkv", null, 'named as another version of "Arrival.2016.2160p.mkv"'],
+      ["Arrival.2016.2160p.mkv", "Arrival (2016).mkv", null, null],
+    ],
   );
   session.exclude(arrival.items[1]!.fileId, true);
   await assert.rejects(session.apply(clash.id), /queue changed/);

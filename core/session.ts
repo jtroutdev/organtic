@@ -883,7 +883,7 @@ export class Session {
       const planned = plan.previews.find((item) => item.source === file.path);
       const failed = problemFor((issue) => issue.source === file.path);
       if (failed) entry.problems.push(`${file.name}: ${failed}`);
-      for (const { source: from, target, artwork } of planned?.changes ?? []) {
+      for (const { source: from, target, artwork, note } of planned?.changes ?? []) {
         const item: PreviewItem = {
           fileId: file.id,
           kind:
@@ -897,6 +897,7 @@ export class Session {
           to: relativeTo(target, file.root).split(separatorOf(target)).join("/"),
           from: from && relativeTo(from, this.files.get(file.id)!.root),
           problem: problemFor((issue) => issue.target === target),
+          note: note ?? null,
         };
         entry.items.push(item);
       }

@@ -4,7 +4,8 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { VIDEO_EXTENSIONS, SUBTITLE_EXTENSIONS, makeNfo } from "./media.ts";
 import { parseMediaPath } from "./parse.ts";
-import { PLEX_TEMPLATES, renderTemplate } from "./naming.ts";
+import { nameVersions } from "./versions.ts";
+import { PLEX_TEMPLATES, renderTemplate, safeName } from "./naming.ts";
 import type {
   BatchSummary,
   Fingerprint,
@@ -253,7 +254,19 @@ export async function createPlan(
     }
     return current;
   }
-  for (const { file, media } of selections) {
+  // Copies that would take the same name are told apart before anything is planned.
+  const versions = nameVersions(selections, ({ file, media }) => {
+    const segments = renderTemplate(
+      media.kind === "tv" ? templates.episode : templates.movie,
+      media,
+    );
+    return options.organize === false
+      ? path.join(path.dirname(file.path), segments.pop()!)
+      : path.join(file.root, ...segments);
+  });
+  for (const selection of selections) {
+    const { file, media } = selection;
+    const version = versions.get(selection);
     try {
       const stat = await fs.lstat(file.path);
       if (!stat.isFile() || stat.isSymbolicLink())
@@ -264,7 +277,8 @@ export async function createPlan(
         media.kind === "tv" ? templates.episode : templates.movie,
         media,
       );
-      const newStem = segments.pop()!;
+      const plainStem = segments.pop()!;
+      const newStem = version ? safeName(`${plainStem} - ${version.label}`) : plainStem;
       const extension = path.extname(file.path).toLowerCase();
       const folder =
         options.organize === false
@@ -285,7 +299,10 @@ export async function createPlan(
         title: media.episodeTitle || media.title,
         changes,
       });
-      if (target !== file.path) add(await moveOperation(file.path, target));
+      if (target !== file.path) {
+        add(await moveOperation(file.path, target));
+        if (version) changes.at(-1)!.note = version.note;
+      }
       const oldStem = path.basename(file.path, path.extname(file.path));
       if (target !== file.path) {
         // Files named after the video travel with it: subtitles, its NFO, its artwork.
@@ -336,8 +353,10 @@ export async function createPlan(
       // beside it, is kept rather than written over. Whether one is being moved there is only
       // known once every file has been planned.
       const nfoName = `${newStem}.nfo`;
+      // A further version shares the NFO written for the plain name.
       if (
         options.nfo &&
+        !version &&
         !(await list(folder)).some((name) => key(name) === key(nfoName))
       )
         unwritten.push({ target: path.join(folder, nfoName), media, changes });
