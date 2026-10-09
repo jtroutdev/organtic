@@ -17,8 +17,8 @@ watch(
   () => props.current,
   async () => {
     await nextTick();
-    for (const el of [pane.value, ...(pane.value?.querySelectorAll(".scroll") ?? [])])
-      if (el) el.scrollTop = 0;
+    for (const el of [pane.value, ...(pane.value?.querySelectorAll(".scroll,.strip") ?? [])])
+      el?.scrollTo(0, 0);
     side.value
       ?.querySelector('.item[aria-current="true"]')
       ?.scrollIntoView({ block: "nearest" });

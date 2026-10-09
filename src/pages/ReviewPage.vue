@@ -79,14 +79,37 @@ watch(kind, (value) => {
 const SOURCES = { tmdb: "TMDB", tvmaze: "TVmaze", kitsu: "Kitsu" };
 
 // A candidate's description stays folded away until it is needed to tell two results apart.
-const described = ref<string[]>([]);
+const described = ref<string | null>(null);
 const idOf = (candidate: { provider: string; id: unknown }) =>
   `${candidate.provider}-${candidate.id}`;
-function describe(id: string) {
-  described.value = described.value.includes(id)
-    ? described.value.filter((item) => item !== id)
-    : [...described.value, id];
+const describing = computed(() =>
+  group.value?.candidates.find((item) => idOf(item) === described.value),
+);
+// Posters are shown small; TMDB and TVmaze serve a reduced size at a predictable address.
+const thumb = (url: string) =>
+  url
+    .replace("/t/p/original/", "/t/p/w154/")
+    .replace("/original_untouched/", "/medium_portrait/");
+const broken = ref<string[]>([]);
+function posterFailed(event: Event, candidate: { provider: string; id: unknown; posterUrl?: string }) {
+  const image = event.target as HTMLImageElement;
+  // Fall back to the full-size poster once before giving up on it.
+  if (candidate.posterUrl && image.src !== candidate.posterUrl) image.src = candidate.posterUrl;
+  else broken.value = [...broken.value, idOf(candidate)];
 }
+// How the group was read and why this match was offered, on one line unless it needs attention.
+const attention = computed(
+  () => !!group.value && !["suggested", "confirmed"].includes(group.value.status),
+);
+const why = computed(() => {
+  const current = group.value;
+  if (!current) return "";
+  const read =
+    match.value && current.parsedTitle.toLowerCase() !== match.value.title.toLowerCase()
+      ? `Read as “${current.parsedTitle}”. `
+      : "";
+  return read + current.reason;
+});
 
 const busy = computed(() => store.busy || group.value?.status === "matching");
 async function remove() {
@@ -372,7 +395,7 @@ const search = () =>
         </template>
 
         <template v-if="group">
-          <div class="row between">
+          <div class="summary">
             <div>
               <span class="kind">{{ group.kind === "tv" ? "TV" : "FILM" }}</span>
               <h2 class="title">
@@ -380,68 +403,12 @@ const search = () =>
                 <span v-if="match" class="muted">({{ match.year ?? "year unknown" }})</span>
               </h2>
             </div>
+            <p :class="{ clip: !attention }" :title="attention ? undefined : why">
+              {{ why }}
+            </p>
             <span class="pill" :class="STATUS[group.status][0]">{{
               STATUS[group.status][1]
             }}</span>
-          </div>
-          <p>
-            <span class="muted"
-              ><template v-if="match">read as “{{ group.parsedTitle }}” · </template
-              >{{ plural(group.files.length, "file") }}
-              <span v-if="problems" class="issue">
-                · {{ plural(problems, "problem") }}</span
-              >
-              ·
-            </span>
-            {{ group.reason }}
-          </p>
-
-          <div class="fill">
-            <h3 class="label" style="margin-bottom: 4px">Match</h3>
-            <div class="cands scroll">
-              <div
-                v-for="(candidate, index) in group.candidates"
-                :key="idOf(candidate)"
-                class="cand"
-                :class="{ on: group.chosen === index }"
-              >
-                <div class="row">
-                  <span
-                    ><strong>{{ candidate.title }}</strong>
-                    <span class="muted"> ({{ candidate.year ?? "year unknown" }})</span></span
-                  >
-                  <span class="fit" :class="{ low: candidate.weak }">
-                    {{ candidate.fit }} ·
-                    {{ SOURCES[candidate.provider] }}
-                  </span>
-                  <button
-                    class="link"
-                    type="button"
-                    :aria-expanded="described.includes(idOf(candidate))"
-                    :aria-label="`Description of ${candidate.title} (${candidate.year ?? 'year unknown'})`"
-                    @click="describe(idOf(candidate))"
-                  >
-                    {{ described.includes(idOf(candidate)) ? "Hide description" : "Description" }}
-                  </button>
-                </div>
-                <span v-if="group.chosen === index" class="label">{{
-                  group.status === "confirmed" ? "Chosen" : "Suggested"
-                }}</span>
-                <button
-                  v-else
-                  class="btn small"
-                  type="button"
-                  :disabled="busy"
-                  :aria-label="`Use this: ${candidate.title} (${candidate.year ?? 'year unknown'})`"
-                  @click="run(() => api.choose(group!.key, index))"
-                >
-                  Use this
-                </button>
-                <p v-if="described.includes(idOf(candidate))">
-                  {{ candidate.overview || "No description available." }}
-                </p>
-              </div>
-            </div>
           </div>
           <div class="cands">
             <form class="row" @submit.prevent="search">
@@ -552,7 +519,65 @@ const search = () =>
               </label>
             </div>
           </div>
-
+          <div>
+            <div class="strip" role="group" aria-label="Matches">
+              <div
+                v-for="(candidate, index) in group.candidates"
+                :key="idOf(candidate)"
+                class="cand"
+                :class="{ on: group.chosen === index }"
+              >
+                <img
+                  v-if="candidate.posterUrl && !broken.includes(idOf(candidate))"
+                  class="poster"
+                  :src="thumb(candidate.posterUrl)"
+                  alt=""
+                  loading="lazy"
+                  referrerpolicy="no-referrer"
+                  @error="posterFailed($event, candidate)"
+                />
+                <span v-else class="poster" aria-hidden="true">{{
+                  candidate.kind === "tv" ? "TV" : "FILM"
+                }}</span>
+                <strong :title="candidate.title"
+                  >{{ candidate.title }}
+                  <span class="muted">({{ candidate.year ?? "year unknown" }})</span></strong
+                >
+                <span class="fit" :class="{ low: candidate.weak }">
+                  {{ candidate.fit }} ·
+                  {{ SOURCES[candidate.provider] }}
+                </span>
+                <span class="row">
+                  <span v-if="group.chosen === index" class="label">{{
+                    group.status === "confirmed" ? "Chosen" : "Suggested"
+                  }}</span>
+                  <button
+                    v-else
+                    class="link"
+                    type="button"
+                    :disabled="busy"
+                    :aria-label="`Use this: ${candidate.title} (${candidate.year ?? 'year unknown'})`"
+                    @click="run(() => api.choose(group!.key, index))"
+                  >
+                    Use this
+                  </button>
+                  <button
+                    class="link"
+                    type="button"
+                    :aria-expanded="described === idOf(candidate)"
+                    :aria-label="`Description of ${candidate.title} (${candidate.year ?? 'year unknown'})`"
+                    @click="described = described === idOf(candidate) ? null : idOf(candidate)"
+                  >
+                    {{ described === idOf(candidate) ? "Hide description" : "Description" }}
+                  </button>
+                </span>
+              </div>
+            </div>
+            <p v-if="describing" class="about">
+              <strong>{{ describing.title }}:</strong>
+              {{ describing.overview || "No description available." }}
+            </p>
+          </div>
           <div class="fill">
             <div>
               <form
@@ -588,7 +613,10 @@ const search = () =>
                     :checked="allPicked"
                     @change="pickAll(($event.target as HTMLInputElement).checked)"
                   />
-                  Files
+                  {{ plural(group.files.length, "file")
+                  }}<span v-if="problems" class="issue">
+                    · {{ plural(problems, "problem") }}</span
+                  >
                 </label>
                 <span class="label">Current name</span>
                 <span class="label">New name</span>
