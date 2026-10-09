@@ -291,9 +291,9 @@ const sections = computed<[string, string, string, string][]>(() => [
           <h3 class="sub">Kitsu</h3>
           <p class="muted">
             An anime catalogue with romaji, English and Japanese titles. Needs
-            no account. Choose it as the source on Review for anime that the
-            others list poorly. Each season or part is usually its own entry
-            there.
+            no account. It is searched only for groups set to Anime on Review,
+            where its results are offered beside the others. Each season or
+            part is usually its own entry there.
           </p>
         </div>
         <label class="check">
@@ -305,8 +305,8 @@ const sections = computed<[string, string, string, string][]>(() => [
           />
           <span
             >Use Kitsu to find anime under their English titles<small
-              >When a fansub-style release is not matched with confidence, its
-              title is sent to Kitsu to learn what else it is called</small
+              >When a group searched as anime is not matched with confidence, every
+              source is searched again under the other title Kitsu lists for it</small
             ></span
           >
         </label>

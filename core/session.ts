@@ -36,6 +36,7 @@ export interface Planner {
 interface Group {
   key: string;
   kind: MediaKind;
+  anime: boolean;
   parsedTitle: string;
   year: number | null;
   fileIds: string[];
@@ -44,7 +45,6 @@ interface Group {
   candidates: QueueCandidate[];
   chosen: number | null;
   query: string;
-  provider: ProviderName;
   results: Map<string, ResolveResult>;
   orderings: EpisodeOrdering[];
   ordering: string | null;
@@ -52,6 +52,8 @@ interface Group {
   numbering: Catalogue;
   /** The other title an anime was found under, when Kitsu supplied it. */
   via?: string;
+  /** Says which sources could not be searched, when some could. */
+  missed?: string;
   /** Bumped whenever a lookup starts, so a slower earlier lookup cannot overwrite a newer one. */
   lookup: number;
   /** The status to return to if a queued lookup is cancelled. */
@@ -71,6 +73,11 @@ interface LookupJob {
 }
 const newRun = (): LookupRun => ({ done: 0, total: 0, cancelled: false });
 
+const SOURCES: Record<ProviderName, string> = {
+  tmdb: "TMDB",
+  tvmaze: "TVmaze",
+  kitsu: "Kitsu",
+};
 const SUBTITLE = /\.(srt|ass|ssa|vtt|sub|idx)$/i;
 const PICTURE = /\.(jpe?g|png|webp|tbn)$/i;
 const messageOf = (error: unknown) =>
@@ -210,13 +217,13 @@ export class Session {
     return {
       key: group.key,
       kind: group.kind,
+      anime: group.anime,
       parsedTitle: group.parsedTitle,
       status: group.status,
       reason: group.reason,
       candidates: group.candidates,
       chosen: group.chosen,
       query: group.query,
-      provider: group.provider,
       orderings: group.orderings,
       ordering: group.ordering,
       keepNumbers: group.keepNumbers,
@@ -258,6 +265,7 @@ export class Session {
         group = {
           key: found.key,
           kind: found.kind,
+          anime: false,
           parsedTitle: found.title,
           year: found.year,
           fileIds: found.fileIds,
@@ -266,7 +274,6 @@ export class Session {
           candidates: [],
           chosen: null,
           query: found.title,
-          provider: "tmdb",
           results: new Map(),
           orderings: [],
           ordering: null,
@@ -274,6 +281,7 @@ export class Session {
           numbering: "tmdb",
           lookup: 0,
         };
+        group.anime = this.looksLikeAnime(group);
         this.groups.set(group.key, group);
       }
       touched.push(group);
@@ -417,6 +425,7 @@ export class Session {
       target = {
         key: `manual:${++this.manualGroups}`,
         kind: first.kind,
+        anime: first.anime,
         parsedTitle: parsed.title || first.parsedTitle,
         year: parsed.year,
         fileIds: [],
@@ -425,7 +434,6 @@ export class Session {
         candidates: [],
         chosen: null,
         query: parsed.title || first.query,
-        provider: first.provider,
         results: new Map(),
         orderings: [],
         ordering: null,
@@ -503,7 +511,10 @@ export class Session {
     return group;
   }
 
-  /** Fansub-style names: a leading [Group] tag, or episode numbers with no season. */
+  /**
+   * Fansub-style names: a leading [Group] tag, or episode numbers with no season. Such a
+   * group starts out searched as anime.
+   */
   private looksLikeAnime(group: Group) {
     return group.fileIds.some((id) => {
       const { parsed } = this.files.get(id)!;
@@ -529,49 +540,44 @@ export class Session {
     group.reason = "Looking up matches.";
     this.changed();
     try {
-      let provider = group.provider;
-      if (provider === "tmdb" && !this.providers.hasToken) {
-        if (group.kind === "movie")
-          throw new Error("Add a TMDB token in Settings to match films.");
-        provider = group.provider = "tvmaze";
-      }
       const input = {
-        provider,
         kind: group.kind,
+        anime: group.anime,
         query: group.query,
         language: this.settings.language,
       };
-      let found: Candidate[] = await this.providers.search({
+      const { found, failed } = await this.providers.searchAll({
         ...input,
         year: group.year,
       });
-      // A year read from the filename can be off or wrong; don't let it hide every result.
-      if (!found.length && group.year !== null)
-        found = await this.providers.search(input);
       if (lookup !== group.lookup || !this.groups.has(group.key)) return;
-      let { ranked, confident } = rankCandidates(
+      if (!found.length) {
+        if (group.kind === "movie" && !this.providers.hasToken)
+          throw new Error("Add a TMDB token in Settings to match films.");
+        if (failed[0]) throw new Error(failed[0].message);
+      }
+      const names = failed.map((item) => SOURCES[item.provider]);
+      group.missed = names.length
+        ? `${names.join(" and ")} could not be searched, so ${names.length === 1 ? "its" : "their"} results are missing.`
+        : "";
+      let { ranked, confident, rival } = rankCandidates(
         { title: group.query, year: group.year },
         found,
       );
       // Anime is often released under its romaji title, which general catalogues list
       // under the English one. Ask Kitsu what else it is called and try again.
       let via = "";
-      if (
-        !confident &&
-        provider !== "kitsu" &&
-        this.settings.animeTitles &&
-        this.looksLikeAnime(group)
-      ) {
+      if (!confident && group.anime && this.settings.animeTitles) {
         const titles = await this.providers
           .alternativeTitles(group.kind, group.query)
           .catch(() => []);
         for (const title of titles.slice(0, 2)) {
           const again = rankCandidates(
             { title, year: null },
-            await this.providers.search({ ...input, query: title }),
+            (await this.providers.searchAll({ ...input, query: title })).found,
           );
           if (!again.confident) continue;
-          ({ ranked, confident } = again);
+          ({ ranked, confident, rival } = again);
           via = title;
           break;
         }
@@ -583,13 +589,15 @@ export class Session {
         fit,
         weak: score < 0.85,
       }));
-      const [best, next] = ranked;
+      const [best] = ranked;
       if (!best)
         this.unmatched(group, "No results. Edit the title and search again.");
-      else if (!confident && next && next.score >= 0.85)
+      else if (!confident && rival && rival.score >= 0.85)
         this.unmatched(
           group,
-          "More than one result fits this name equally well. Choose one.",
+          ["More than one result fits this name equally well. Choose one.", group.missed]
+            .filter(Boolean)
+            .join(" "),
         );
       else {
         group.chosen = 0;
@@ -669,6 +677,7 @@ export class Session {
       group.via && status !== "confirmed"
         ? `Found under its other title “${group.via}”, which Kitsu lists for “${group.query}”.`
         : "",
+      status !== "confirmed" ? group.missed : "",
       absolute
         ? "Episode numbers had no season and were counted from the start of the show."
         : "",
@@ -699,12 +708,8 @@ export class Session {
     if (typeof request?.query !== "string" || !request.query.trim())
       throw new Error("Enter a title to search.");
     group.query = request.query.trim();
-    group.kind = request.kind === "tv" ? "tv" : "movie";
-    group.provider = (["tvmaze", "kitsu"] as const).includes(
-      request.provider as "tvmaze",
-    )
-      ? request.provider
-      : "tmdb";
+    group.anime = request.kind === "anime";
+    if (!group.anime) group.kind = request.kind === "tv" ? "tv" : "movie";
     // The typed title replaces the parsed one, so its year no longer applies.
     if (group.query !== group.parsedTitle) group.year = null;
     await this.lookUp(group);

@@ -83,15 +83,21 @@ function describeFit(
   return `${titlePart}, year ${wanted === offered ? "matches" : "differs"}`;
 }
 
+/** The same work as another source lists it, which is no reason to doubt a match. */
+const sameWork = (a: Candidate, b: Candidate) =>
+  a.provider !== b.provider &&
+  normalizeTitle(a.title) === normalizeTitle(b.title) &&
+  (a.year === null || b.year === null || Math.abs(a.year - b.year) <= 1);
+
 /**
  * Orders provider results by how well they fit the parsed title and year. The top result
- * is `confident` only when it is a strong fit and clearly ahead of the runner-up; anything
- * else needs a person to choose.
+ * is `confident` only when it is a strong fit and clearly ahead of its `rival`, the next
+ * result that is a different work; anything else needs a person to choose.
  */
 export function rankCandidates(
   wanted: { title: string; year: number | null },
   candidates: Candidate[],
-): { ranked: RankedCandidate[]; confident: boolean } {
+): { ranked: RankedCandidate[]; confident: boolean; rival?: RankedCandidate } {
   const ranked = candidates
     .map((candidate, order) => {
       const title = titleScore(wanted.title, candidate.title);
@@ -102,13 +108,16 @@ export function rankCandidates(
         fit: describeFit(title, wanted.year, candidate.year),
       };
     })
-    // Providers already order by relevance; keep that order between equal scores.
+    // Providers already order by relevance; keep that order between equal scores, which
+    // also keeps the first source searched ahead of the same result from a later one.
     .sort((a, b) => b.score - a.score || a.order - b.order)
     .map(({ candidate, score, fit }) => ({ candidate, score, fit }));
-  const [best, next] = ranked;
+  const [best, ...rest] = ranked;
+  const rival = best && rest.find((item) => !sameWork(best.candidate, item.candidate));
   return {
     ranked,
     confident:
-      !!best && best.score >= 0.85 && (!next || best.score - next.score >= 0.1),
+      !!best && best.score >= 0.85 && (!rival || best.score - rival.score >= 0.1),
+    ...(rival ? { rival } : {}),
   };
 }

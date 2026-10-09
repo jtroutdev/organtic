@@ -11,7 +11,14 @@ import { DEFAULT_SETTINGS, mergeSettings } from "../core/settings.ts";
 import type { AppSettings, QueueState } from "../core/types.ts";
 
 // A tiny TMDB: two shows, two films sharing a title, and one film.
+// The other sources answer, with nothing.
+const elsewhere = (url: URL) =>
+  url.hostname === "api.themoviedb.org"
+    ? null
+    : Response.json(url.hostname === "kitsu.io" ? { data: [] } : []);
 const tmdb = async (url: URL) => {
+  const other = elsewhere(url);
+  if (other) return other;
   const query = (url.searchParams.get("query") ?? "").toLowerCase();
   const year = url.searchParams.get("year");
   const at = url.pathname.replace("/3/", "");
@@ -161,7 +168,7 @@ test("choosing, searching again and changing settings update the queue", async (
   const typo = group("Arival");
   assert.equal(typo.status, "unmatched");
   assert.match(typo.reason, /No results/);
-  await session.search(typo.key, { query: "Arrival", kind: "movie", provider: "tmdb" });
+  await session.search(typo.key, { query: "Arrival", kind: "movie" });
   assert.equal(group("Arival").status, "suggested");
 
   session.updateSettings(mergeSettings({ preset: "jellyfin", organize: false }));
@@ -341,7 +348,7 @@ test("lookups report progress and can be cancelled", async (t) => {
   open();
   await second;
   // The held requests were aborted, and nothing they returned reached the queue.
-  assert.deepEqual(aborted, [true, true, true]);
+  assert.ok(aborted.length >= 3 && aborted.every(Boolean));
   assert.equal(states.length, before);
   assert.deepEqual(statuses(), Array(5).fill("unmatched"));
   session.cancelLookups();
@@ -350,14 +357,13 @@ test("lookups report progress and can be cancelled", async (t) => {
 
   // A cancelled group can still be searched by hand.
   const solaris = session.state().groups.find((g) => g.parsedTitle === "Solaris")!;
-  await session.search(solaris.key, { query: "Solaris", kind: "movie", provider: "tmdb" });
+  await session.search(solaris.key, { query: "Solaris", kind: "movie" });
   assert.equal(session.state().groups.find((g) => g.key === solaris.key)!.candidates.length, 2);
 
   // A matched group that was only being refreshed keeps its match and status when cancelled.
   await session.search(session.state().groups.find((g) => g.parsedTitle === "Arrival")!.key, {
     query: "Arrival",
     kind: "movie",
-    provider: "tmdb",
   });
   const arrival = () => session.state().groups.find((g) => g.parsedTitle === "Arrival")!;
   session.confirm(arrival().key);
@@ -417,7 +423,7 @@ test("a group can read its files in an alternate order", async (t) => {
   await assert.rejects(session.setOrdering(group().key, "ffffffff", false), /not available/);
   // Choosing a show again starts from aired order.
   await session.setOrdering(group().key, "0000beef0001", false);
-  await session.search(group().key, { query: "Severance", kind: "tv", provider: "tmdb" });
+  await session.search(group().key, { query: "Severance", kind: "tv" });
   assert.equal(group().ordering, null);
 });
 
@@ -427,6 +433,8 @@ test("files named by air date are matched to their episode and can be overridden
   for (const name of ["Daily.2024.03.15.1080p.mkv", "Daily.2024.03.20.1080p.mkv"]) await fs.writeFile(path.join(dir, name), name);
   const providers = new Providers({
     fetcher: async (url) => {
+      const other = elsewhere(url);
+      if (other) return other;
       const at = url.pathname.replace("/3/", "");
       if (at === "search/tv") return Response.json({ results: [{ id: 7, name: "Daily", first_air_date: "1996-07-22" }] });
       if (at === "tv/7") return Response.json({ seasons: [{ season_number: 29, air_date: "2023-10-16", episode_count: 2 }] });
@@ -462,7 +470,7 @@ test("files named by air date are matched to their episode and can be overridden
   );
 });
 
-test("a fansub release is found under its English title, and Kitsu can be chosen as the source", async (t) => {
+test("a fansub release is found under its English title, with Kitsu's own entry offered beside it", async (t) => {
   const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "organtic-")));
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
   for (const name of ["[SubsPlease] Sousou no Frieren - 02 (1080p) [ABCD1234].mkv", "Sousou.no.Frieren.S01E03.mkv"])
@@ -507,11 +515,13 @@ test("a fansub release is found under its English title, and Kitsu can be chosen
   assert.equal(group().candidates[0]!.title, "Frieren: Beyond Journey's End");
   assert.match(group().reason, /Found under its other title “Frieren: Beyond Journey's End”, which Kitsu lists for “Sousou no Frieren”/);
   assert.deepEqual(group().files.map((file) => file.label), ["#2 → S01E02", "S01E03"]);
-  assert.deepEqual(asked, ["Sousou no Frieren"]);
+  assert.deepEqual(asked, ["Sousou no Frieren", "Frieren: Beyond Journey's End"]);
 
-  // Chosen directly as the source, Kitsu names the files from its own entry.
-  await session.search(group().key, { query: "Sousou no Frieren", kind: "tv", provider: "kitsu" });
-  assert.equal(group().candidates[0]!.provider, "kitsu");
+  // Both sources list it, which is one match and not two to choose between; TMDB leads.
+  assert.deepEqual(group().candidates.map((item) => item.provider), ["tmdb", "kitsu"]);
+  assert.equal(group().chosen, 0);
+  // Chosen instead, Kitsu names the files from its own entry.
+  await session.choose(group().key, 1);
   assert.deepEqual(
     group().files.map((file) => file.target),
     [
@@ -527,21 +537,69 @@ test("a fansub release is found under its English title, and Kitsu can be chosen
   // No mapping list here, so there is no TVDB numbering to use and the group says so.
   assert.match(group().reason, /TVDB numbering is not known for this entry/);
   await session.choose(group().key, 0);
-  assert.equal(group().numbering, "tvdb");
-  await session.search(group().key, { query: "Frieren: Beyond Journey's End", kind: "tv", provider: "tmdb" });
-  assert.equal(group().numberingChoice, false);
+  assert.deepEqual([group().numberingChoice, group().numbering], [false, "tvdb"]);
 
   // Season mapping is off unless asked for, and without it there is no numbering to choose.
   assert.equal(DEFAULT_SETTINGS.animeSeasons, false);
   const unmapped = make();
   await unmapped.addFiles(await scanPaths([dir]));
-  await unmapped.search(unmapped.state().groups[0]!.key, { query: "Sousou no Frieren", kind: "tv", provider: "kitsu" });
+  await unmapped.choose(unmapped.state().groups[0]!.key, 1);
+  assert.equal(unmapped.state().groups[0]!.candidates[1]!.provider, "kitsu");
   assert.equal(unmapped.state().groups[0]!.numberingChoice, false);
 
-  // Turned off, the title is never sent to Kitsu and the group is left for the user.
+  // Turned off, there is no second search: Kitsu's entry is offered, but not trusted.
   asked.length = 0;
   const off = make({ animeTitles: false });
   await off.addFiles(await scanPaths([dir]));
-  assert.equal(off.state().groups[0]!.status, "unmatched");
-  assert.deepEqual(asked, []);
+  assert.deepEqual(
+    [off.state().groups[0]!.status, off.state().groups[0]!.candidates.map((item) => item.provider)],
+    ["review", ["kitsu"]],
+  );
+  assert.deepEqual(asked, ["Sousou no Frieren", "episodes"]);
+});
+
+test("every source is searched, and one that fails is named without hiding the rest", async (t) => {
+  const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "organtic-")));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  await fs.writeFile(path.join(dir, "Severance.S01E01.mkv"), "x");
+  let kitsuDown = true;
+  let kitsuAsked = 0;
+  const providers = new Providers({
+    fetcher: async (url) => {
+      if (url.hostname === "kitsu.io" && ++kitsuAsked)
+        return kitsuDown ? new Response("", { status: 500 }) : Response.json({ data: [] });
+      if (url.pathname === "/search/shows")
+        return Response.json([
+          { show: { id: 44933, name: "Severance", premiered: "2022-02-18" } },
+          { show: { id: 5, name: "Severance Pay", premiered: "2006-01-01" } },
+        ]);
+      return url.hostname === "api.tvmaze.com" ? new Response("", { status: 404 }) : tmdb(url);
+    },
+  });
+  providers.setToken("test");
+  const session = new Session({
+    providers,
+    settings: DEFAULT_SETTINGS,
+    planner: { createPlan, applyPlan: (plan) => applyPlan(plan, path.join(dir, ".journals")) },
+  });
+  await session.addFiles(await scanPaths([dir]));
+  const group = () => session.state().groups[0]!;
+  // TVmaze's listing of the same show is not a rival, so the match is still suggested.
+  assert.deepEqual(
+    group().candidates.map((item) => [item.provider, item.year]),
+    [["tmdb", 2022], ["tvmaze", 2022], ["tvmaze", 2006]],
+  );
+  assert.deepEqual([group().status, group().chosen], ["suggested", 0]);
+  assert.match(group().files[0]!.target!, /\{tmdb-95396\}/);
+  // Nothing about the name says anime, so Kitsu was not asked.
+  assert.deepEqual([group().anime, kitsuAsked], [false, 0]);
+
+  // Searched as anime, it stays a show and Kitsu joins the sources.
+  await session.search(group().key, { query: "Severance", kind: "anime" });
+  assert.deepEqual([group().anime, group().kind, group().status, kitsuAsked], [true, "tv", "suggested", 1]);
+  assert.match(group().reason, /Kitsu could not be searched, so its results are missing\./);
+  kitsuDown = false;
+  await session.search(group().key, { query: "Severance", kind: "tv" });
+  assert.deepEqual([group().anime, kitsuAsked], [false, 1]);
+  assert.doesNotMatch(group().reason, /could not be searched/);
 });

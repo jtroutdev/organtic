@@ -269,13 +269,14 @@ export interface EpisodeNumbers {
 export interface QueueGroup {
   key: string;
   kind: MediaKind;
+  /** Searched as anime, which adds Kitsu to the sources. */
+  anime: boolean;
   parsedTitle: string;
   status: GroupStatus;
   reason: string;
   candidates: QueueCandidate[];
   chosen: number | null;
   query: string;
-  provider: ProviderName;
   files: QueueFile[];
   /** Other ways the chosen show's episodes are numbered, e.g. DVD order; empty if none. */
   orderings: EpisodeOrdering[];
@@ -374,7 +375,7 @@ export interface AppSettings {
   skipExtras: boolean;
   /** Look up matches as soon as files are added. */
   autoMatch: boolean;
-  /** For anime releases, ask Kitsu for the English title when the usual lookup is unsure. */
+  /** For anime releases, search again under the English title Kitsu lists when the lookup is unsure. */
   animeTitles: boolean;
   /** Place Kitsu matches in their TMDB or TVDB season using a downloaded community list. */
   animeSeasons: boolean;
@@ -391,6 +392,6 @@ export interface SourcesState {
 
 export interface SearchRequest {
   query: string;
-  kind: MediaKind;
-  provider: ProviderName;
+  /** "anime" keeps the group's film or TV kind and adds Kitsu to the sources searched. */
+  kind: MediaKind | "anime";
 }

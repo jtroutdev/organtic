@@ -3,7 +3,6 @@ import { computed, nextTick, ref, watch } from "vue";
 import type {
   Catalogue,
   MediaKind,
-  ProviderName,
   QueueFile,
 } from "../../core/types.ts";
 import ListItem from "../components/ListItem.vue";
@@ -61,21 +60,16 @@ const countFor = (filter: Filter) =>
 
 // The search form starts from the selected group and is the user's to edit.
 const query = ref("");
-const kind = ref<MediaKind>("movie");
-const provider = ref<ProviderName>("tmdb");
+const kind = ref<MediaKind | "anime">("movie");
 watch(
-  () => [group.value?.key, group.value?.query, group.value?.kind, group.value?.provider],
+  () => [group.value?.key, group.value?.query, group.value?.kind, group.value?.anime],
   () => {
     if (!group.value) return;
     query.value = group.value.query;
-    kind.value = group.value.kind;
-    provider.value = group.value.provider;
+    kind.value = group.value.anime ? "anime" : group.value.kind;
   },
   { immediate: true },
 );
-watch(kind, (value) => {
-  if (value === "movie" && provider.value === "tvmaze") provider.value = "tmdb";
-});
 const SOURCES = { tmdb: "TMDB", tvmaze: "TVmaze", kitsu: "Kitsu" };
 
 // Everything known about a candidate stays in a dialog until it is needed to tell two results apart.
@@ -337,7 +331,6 @@ const search = () =>
     api.search(group.value!.key, {
       query: query.value,
       kind: kind.value,
-      provider: provider.value,
     }),
   );
 </script>
@@ -581,26 +574,13 @@ const search = () =>
                 <button type="button" :aria-pressed="kind === 'tv'" @click="kind = 'tv'">
                   TV
                 </button>
-              </div>
-              <div class="seg" role="group" aria-label="Source">
-                <button type="button" :aria-pressed="provider === 'tmdb'" @click="provider = 'tmdb'">
-                  TMDB
-                </button>
                 <button
                   type="button"
-                  :aria-pressed="provider === 'tvmaze'"
-                  :disabled="kind === 'movie'"
-                  @click="provider = 'tvmaze'"
+                  :aria-pressed="kind === 'anime'"
+                  :title="`Also searches Kitsu, as a ${group.kind === 'tv' ? 'show' : 'film'}`"
+                  @click="kind = 'anime'"
                 >
-                  TVmaze
-                </button>
-                <button
-                  type="button"
-                  :aria-pressed="provider === 'kitsu'"
-                  title="Anime catalogue"
-                  @click="provider = 'kitsu'"
-                >
-                  Kitsu
+                  Anime
                 </button>
               </div>
               <button class="btn" type="submit" :disabled="busy">Search</button>
