@@ -157,6 +157,18 @@ test("unchanged names can still create NFO, and an NFO already beside the video 
   assert.deepEqual(moving.operations.map((op) => op.type), ["move"]);
 });
 
+test("two copies of a film in different formats share one written NFO", async (t) => {
+  const f = await fixture(t);
+  await fs.writeFile(path.join(f.dir, "Arrival.2016.720p.avi"), "another copy");
+  const { files } = await scanPaths([f.dir]);
+  const plan = await planInPlace(files.map((file) => ({ file, media })), { nfo: true });
+  assert.deepEqual(plan.errors, []);
+  assert.deepEqual(
+    plan.operations.map((op) => `${op.type} ${path.basename(op.target)}`).sort(),
+    ["move Arrival (2016).avi", "move Arrival (2016).mkv", "write Arrival (2016).nfo"],
+  );
+});
+
 test("recovers an incomplete final journal record without corrupting later events", async (t) => {
   const f = await fixture(t);
   const plan = await planInPlace([{ file: f.file, media }]);

@@ -225,6 +225,8 @@ export async function createPlan(
     taken: (name: string) => boolean;
     changes: Changes;
   }[] = [];
+  // NFO files already accounted for, whether moved, written or found in place.
+  const nfos = new Set<string>();
   const list = async (dir: string) => {
     let entries = listings.get(dir);
     if (!entries) listings.set(dir, (entries = await entriesOf(dir)));
@@ -336,14 +338,19 @@ export async function createPlan(
       }
       // An NFO the file already had is kept rather than written over, as is one already
       // waiting under the new name, which is what a correctly named video has beside it.
+      // Two copies of one episode in different formats share a name, and so share one NFO.
       const nfoName = `${newStem}.nfo`;
-      hasNfo ||= (await list(folder)).some((name) => key(name) === key(nfoName));
+      const nfoKey = key(path.join(folder, nfoName));
+      hasNfo ||=
+        nfos.has(nfoKey) ||
+        (await list(folder)).some((name) => key(name) === key(nfoName));
       if (options.nfo && !hasNfo)
         add({
           type: "write",
           target: path.join(folder, nfoName),
           content: makeNfo(media),
         });
+      nfos.add(nfoKey);
       // Artwork belongs to a title's own folder, so it needs a template that makes one.
       // It is decided after the loop, once everything being moved into each folder is known.
       if (options.artwork && options.organize !== false && segments.length) {
