@@ -164,10 +164,15 @@ function edit(file: QueueFile) {
     episodeEnd: String(file.numbers.episodeEnd ?? ""),
   };
 }
-// Closing the form removes the control that had focus; hand it back to the file's link.
+// Closing the form removes the control that had focus; hand it back to the file's episode button.
 function closeEdit(fileId: string) {
   editing.value = null;
-  void focusOn(`[data-file="${fileId}"] .link`);
+  void focusOn(`[data-file="${fileId}"] .ep`);
+}
+// A path is shown as its folder, which gives way first when space is short, and its file name.
+function split(path: string) {
+  const at = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1;
+  return [path.slice(0, at), path.slice(at)];
 }
 async function saveNumbers(fileId: string) {
   const value = (text: string | number) =>
@@ -550,17 +555,6 @@ const search = () =>
 
           <div class="fill">
             <div>
-              <div class="row between">
-                <h3 class="label">Files</h3>
-                <label v-if="canMove && group.files.length > 1" class="pick muted">
-                  <input
-                    type="checkbox"
-                    :checked="allPicked"
-                    @change="pickAll(($event.target as HTMLInputElement).checked)"
-                  />
-                  Select all
-                </label>
-              </div>
               <form
                 v-if="pickedHere.length"
                 class="row numbers movebar"
@@ -584,14 +578,28 @@ const search = () =>
                 </button>
               </form>
             </div>
-            <div class="scroll">
+            <div class="files scroll">
+              <div class="file cols">
+                <label class="pick label">
+                  <input
+                    v-if="canMove && group.files.length > 1"
+                    type="checkbox"
+                    aria-label="Select all files"
+                    :checked="allPicked"
+                    @change="pickAll(($event.target as HTMLInputElement).checked)"
+                  />
+                  Files
+                </label>
+                <span class="label">Current name</span>
+                <span class="label">New name</span>
+              </div>
               <div
                 v-for="file in group.files"
                 :key="file.id"
                 class="file"
                 :data-file="file.id"
               >
-                <label class="ep pick">
+                <span class="pick">
                   <input
                     v-if="canMove"
                     v-model="picked"
@@ -599,48 +607,58 @@ const search = () =>
                     :value="file.id"
                     :aria-label="`Select ${file.source}`"
                   />
-                  {{ file.label }}
-                </label>
-                <div>
-                  <div class="mono muted">{{ file.source }}</div>
-                  <form
-                    v-if="editing === file.id"
-                    class="row numbers"
-                    :aria-label="`Season and episode for ${file.source}`"
-                    @submit.prevent="saveNumbers(file.id)"
-                    @keydown.esc="closeEdit(file.id)"
+                  <button
+                    v-if="group.kind === 'tv'"
+                    class="ep"
+                    type="button"
+                    title="Change season or episode"
+                    :aria-label="`${file.label}: change season or episode for ${file.source}`"
+                    :aria-expanded="editing === file.id"
+                    @click="edit(file)"
                   >
-                    <label
-                      >Season
-                      <input v-focus v-model="numbers.season" class="input" type="number" min="0" max="999" placeholder="none"
-                    /></label>
-                    <label
-                      >Episode
-                      <input v-model="numbers.episode" class="input" type="number" min="1" max="9999" required
-                    /></label>
-                    <label
-                      ><span aria-hidden="true">to</span
-                      ><span class="sr-only">Last episode, for a multi-episode file</span>
-                      <input v-model="numbers.episodeEnd" class="input" type="number" min="2" max="9999" placeholder="single"
-                    /></label>
-                    <button class="btn primary" type="submit" :disabled="busy">Save</button>
-                    <button class="btn quiet" type="button" @click="closeEdit(file.id)">Cancel</button>
-                  </form>
-                  <span v-else-if="file.issue" class="issue">{{ file.issue }}</span>
-                  <template v-else-if="file.excluded">
-                    <span class="muted">Left out of the next batch. </span>
-                    <button class="link" type="button" @click="run(() => api.exclude(file.id, false))">
-                      Include again
-                    </button>
-                  </template>
-                  <span v-else-if="file.target" class="mono new">{{ file.target }}</span>
-                  <span v-else class="muted">New name appears once a match is chosen.</span>
-                  <div v-if="group.kind === 'tv' && editing !== file.id">
-                    <button class="link" type="button" @click="edit(file)">
-                      {{ file.numbers.episode === null ? "Set season and episode" : "Change season or episode" }}
-                    </button>
-                  </div>
-                </div>
+                    {{ file.label }}
+                  </button>
+                  <span v-else class="ep">{{ file.label }}</span>
+                </span>
+                <span class="path muted" :title="file.source"
+                  ><span class="dir">{{ split(file.source)[0] }}</span
+                  ><span class="base">{{ split(file.source)[1] }}</span></span
+                >
+                <span v-if="file.issue" class="issue">{{ file.issue }}</span>
+                <span v-else-if="file.excluded"
+                  ><span class="muted">Left out of the next batch. </span>
+                  <button class="link" type="button" @click="run(() => api.exclude(file.id, false))">
+                    Include again
+                  </button></span
+                >
+                <span v-else-if="file.target" class="path" :title="file.target"
+                  ><span class="dir muted">{{ split(file.target)[0] }}</span
+                  ><span class="base">{{ split(file.target)[1] }}</span></span
+                >
+                <span v-else class="muted">Appears once a match is chosen.</span>
+                <form
+                  v-if="editing === file.id"
+                  class="row numbers edit"
+                  :aria-label="`Season and episode for ${file.source}`"
+                  @submit.prevent="saveNumbers(file.id)"
+                  @keydown.esc="closeEdit(file.id)"
+                >
+                  <label
+                    >Season
+                    <input v-focus v-model="numbers.season" class="input" type="number" min="0" max="999" placeholder="none"
+                  /></label>
+                  <label
+                    >Episode
+                    <input v-model="numbers.episode" class="input" type="number" min="1" max="9999" required
+                  /></label>
+                  <label
+                    ><span aria-hidden="true">to</span
+                    ><span class="sr-only">Last episode, for a multi-episode file</span>
+                    <input v-model="numbers.episodeEnd" class="input" type="number" min="2" max="9999" placeholder="single"
+                  /></label>
+                  <button class="btn primary" type="submit" :disabled="busy">Save</button>
+                  <button class="btn quiet" type="button" @click="closeEdit(file.id)">Cancel</button>
+                </form>
               </div>
             </div>
           </div>
