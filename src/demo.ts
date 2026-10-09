@@ -85,6 +85,9 @@ const FILMS = [
 async function catalogue(url: URL): Promise<Response> {
   // A real source takes a moment; without this, progress and cancelling never show.
   await new Promise((resolve) => setTimeout(resolve, 350));
+  // Only TMDB is canned; the other sources have nothing to add.
+  if (url.hostname !== "api.themoviedb.org")
+    return Response.json(url.hostname === "kitsu.io" ? { data: [] } : []);
   const at = url.pathname.replace("/3/", "");
   const query = (url.searchParams.get("query") ?? "").toLowerCase();
   const year = url.searchParams.get("year");

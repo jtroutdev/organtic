@@ -70,4 +70,15 @@ test("ranks candidates and is confident only about a clear winner", () => {
   const loose = rankCandidates({ title: "The Office", year: null }, [candidate("Office Space", 1999)]);
   assert.equal(loose.confident, false);
   assert.deepEqual(rankCandidates({ title: "Dune", year: null }, []), { ranked: [], confident: false });
+
+  // The same film from a second source is not a rival; a different film with that title is.
+  const elsewhere: Candidate = { ...candidate("Dune", 2021, 9), provider: "kitsu" };
+  const both = rankCandidates({ title: "Dune", year: 2021 }, [dunes[1]!, elsewhere, dunes[0]!]);
+  assert.deepEqual(both.ranked.map((r) => r.candidate.provider), ["tmdb", "kitsu", "tmdb"]);
+  assert.deepEqual([both.confident, both.rival?.candidate.year], [true, 1984]);
+  assert.equal(rankCandidates({ title: "Dune", year: null }, [dunes[1]!, elsewhere]).confident, true);
+  assert.equal(
+    rankCandidates({ title: "Dune", year: null }, [dunes[1]!, { ...elsewhere, year: 1984 }]).confident,
+    false,
+  );
 });

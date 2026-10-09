@@ -446,6 +446,50 @@ export class Providers {
       backdropUrl: tmdbImage(item.backdrop_path),
     }));
   }
+  /**
+   * Searches every source that can answer: TMDB when a token is set, TVmaze for shows,
+   * and Kitsu for anime. Results keep that order. A source that fails is reported, not fatal.
+   */
+  async searchAll({
+    anime = false,
+    ...input
+  }: Omit<SearchInput, "provider"> & { anime?: boolean }): Promise<{
+    found: Candidate[];
+    failed: { provider: ProviderName; message: string }[];
+  }> {
+    const sources: ProviderName[] = [
+      ...(this.token ? (["tmdb"] as const) : []),
+      ...(input.kind === "tv" ? (["tvmaze"] as const) : []),
+      ...(anime ? (["kitsu"] as const) : []),
+    ];
+    const settled = await Promise.allSettled(
+      sources.map(async (provider) => {
+        const found = await this.search({ ...input, provider });
+        // A year read from the filename can be off or wrong; don't let it hide every result.
+        return found.length || input.year == null
+          ? found
+          : this.search({ ...input, provider, year: null });
+      }),
+    );
+    return {
+      found: settled.flatMap((result) =>
+        result.status === "fulfilled" ? result.value : [],
+      ),
+      failed: settled.flatMap((result, index) =>
+        result.status === "rejected"
+          ? [
+              {
+                provider: sources[index]!,
+                message:
+                  result.reason instanceof Error
+                    ? result.reason.message
+                    : String(result.reason),
+              },
+            ]
+          : [],
+      ),
+    };
+  }
   async resolve(
     candidate: Candidate,
     { season, episode, language = "en-US" }: ResolveInput,

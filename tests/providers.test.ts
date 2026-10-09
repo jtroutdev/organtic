@@ -61,6 +61,37 @@ test("missing token and transport errors are not empty results", async () => {
     /connection/,
   );
 });
+test("searching every source keeps what answered and names what did not", async () => {
+  const asked: string[] = [];
+  const p = new Providers({
+    fetcher: async (url) => {
+      asked.push(`${url.hostname}${url.pathname}${url.searchParams.has("year") ? "?year" : ""}`);
+      if (url.hostname === "api.tvmaze.com") throw new Error("offline");
+      if (url.hostname === "kitsu.io")
+        return Response.json({ data: [{ id: "3", attributes: { canonicalTitle: "Film", subtype: "movie" } }] });
+      return Response.json({
+        results: url.searchParams.has("year") ? [] : [{ id: 1, title: "Film", release_date: "1999-01-01" }],
+      });
+    },
+  });
+  // Kitsu is only asked about anime.
+  assert.deepEqual(await p.searchAll({ kind: "movie", query: "Film" }), { found: [], failed: [] });
+  assert.equal(asked.length, 0);
+  // Without a token TMDB is left out; TVmaze has no films.
+  const films = await p.searchAll({ kind: "movie", query: "Film", year: 1998, anime: true });
+  assert.deepEqual([films.found.map((item) => item.provider), films.failed], [["kitsu"], []]);
+  p.setToken("test");
+  asked.length = 0;
+  const again = await p.searchAll({ kind: "movie", query: "Film", year: 1998, anime: true });
+  assert.deepEqual(again.found.map((item) => [item.provider, item.id]), [["tmdb", 1], ["kitsu", 3]]);
+  // TMDB found nothing for that year, so it was asked again without it.
+  assert.deepEqual(asked.filter((item) => item.includes("themoviedb")), [
+    "api.themoviedb.org/3/search/movie?year",
+    "api.themoviedb.org/3/search/movie",
+  ]);
+  const shows = await p.searchAll({ kind: "tv", query: "Film" });
+  assert.deepEqual(shows.failed.map((item) => [item.provider, /connection/.test(item.message)]), [["tvmaze", true]]);
+});
 test("retries rate limiting and handles unauthorized and malformed data", async () => {
   let calls = 0;
   const p = new Providers({
