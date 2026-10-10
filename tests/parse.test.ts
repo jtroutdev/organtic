@@ -236,6 +236,34 @@ test("reads looser season and episode forms and the episode name after them", ()
     );
 });
 
+test("reads a production code with a segment letter as a season and an episode name", () => {
+  const cases: [string, string, Partial<ParsedName>][] = [
+    [
+      "/lib/Adventure Time/Adventure Time Season 2 Complete/Adventure Time - 201a - The Eyes {C_P} (720p).mkv",
+      "/lib/Adventure Time",
+      { title: "Adventure Time", kind: "tv", season: 2, episode: null, episodeTitle: "The Eyes" },
+    ],
+    [
+      "/lib/Adventure Time/Adventure Time Season 3 Complete/310a&b - Holly Jolly Secrets.mkv",
+      "/lib/Adventure Time",
+      { title: "Adventure Time", kind: "tv", season: 3, episode: null, episodeTitle: "Holly Jolly Secrets" },
+    ],
+    [
+      "/lib/Adventure Time/Adventure Time - 112b - What Have You Done [fudog].avi",
+      "/lib/Adventure Time",
+      { title: "Adventure Time", kind: "tv", season: 1, episode: null, episodeTitle: "What Have You Done" },
+    ],
+    // Not set off by dashes: part of a film's name.
+    ["/lib/Apollo 113a.mkv", "/lib", { title: "Apollo 113a", kind: "movie", season: null }],
+  ];
+  for (const [file, root, expected] of cases)
+    assert.deepEqual(
+      pick(parseMediaPath(file, root), ...(Object.keys(expected) as (keyof ParsedName)[])),
+      expected,
+      file,
+    );
+});
+
 test("reads run-together numbers and bare episode names inside a season folder", () => {
   const cases: [string, Partial<ParsedName>][] = [
     [
