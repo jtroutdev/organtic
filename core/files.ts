@@ -3,7 +3,7 @@ import type { Stats } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { VIDEO_EXTENSIONS, SUBTITLE_EXTENSIONS, makeNfo } from "./media.ts";
-import { parseMediaPath } from "./parse.ts";
+import { normalizeTitle, parseMediaPath, parseStem } from "./parse.ts";
 import { nameVersions } from "./versions.ts";
 import { PLEX_TEMPLATES, renderTemplate, safeName } from "./naming.ts";
 import type {
@@ -11,9 +11,11 @@ import type {
   Fingerprint,
   JournalEvent,
   MediaFile,
+  MediaLike,
   MkdirOperation,
   MoveOperation,
   Operation,
+  RenameOperation,
   RmdirOperation,
   Plan,
   PlanOptions,
@@ -178,6 +180,22 @@ export async function scanPaths(paths: string[]): Promise<ScanResult> {
   return { files: files.sort((a, b) => a.path.localeCompare(b.path)), skipped };
 }
 
+/**
+ * Whether a folder's own name says it is this title's folder: "Show", "Show (1999)",
+ * "Show.S01.1080p", or the name the template gives it.
+ */
+function isTitleFolder(name: string, media: MediaLike, rendered: string) {
+  if (key(name) === key(rendered)) return true;
+  const wanted = normalizeTitle(media.title);
+  if (!wanted) return false;
+  if (normalizeTitle(name) === wanted) return true;
+  const parsed = parseStem(name);
+  return (
+    normalizeTitle(parsed.title) === wanted &&
+    (parsed.year === null || !media.year || parsed.year === media.year)
+  );
+}
+
 async function moveOperation(
   source: string,
   target: string,
@@ -254,6 +272,51 @@ export async function createPlan(
     }
     return current;
   }
+  // An imported folder that is itself one title's folder is renamed to the title's name, not
+  // given a second title folder inside it: every file added from it is going to that one
+  // title, and the folder is already named after it. Maps each such folder to its new path.
+  const titleRoots = new Map<string, string>();
+  if (options.organize !== false) {
+    const named = new Map<string, Set<string> | null>();
+    for (const { file, media, sourceRoot } of selections) {
+      if (named.get(file.root) === null) continue;
+      let segments: string[];
+      try {
+        segments = renderTemplate(
+          media.kind === "tv" ? templates.episode : templates.movie,
+          media,
+        );
+      } catch {
+        // Reported against the file below.
+        continue;
+      }
+      const [title = ""] = segments;
+      named.set(
+        file.root,
+        segments.length > 1 &&
+          (sourceRoot ?? file.root) === file.root &&
+          isTitleFolder(path.basename(file.root), media, title)
+          ? (named.get(file.root) ?? new Set<string>()).add(title)
+          : null,
+      );
+    }
+    const claimed = new Set<string>();
+    for (const [root, names] of named) {
+      const [name] = names ?? [];
+      const parent = path.dirname(root);
+      if (names?.size !== 1 || !name || parent === root) continue;
+      const target = path.join(parent, name);
+      // Another folder already has the name: the title folder is made inside, as usual.
+      if (
+        claimed.has(key(target)) ||
+        (key(name) !== key(path.basename(root)) &&
+          (await list(parent)).some((entry) => key(entry) === key(name)))
+      )
+        continue;
+      claimed.add(key(target));
+      titleRoots.set(root, target);
+    }
+  }
   // Copies that would take the same name are told apart before anything is planned.
   const versions = nameVersions(selections, ({ file, media }) => {
     const segments = renderTemplate(
@@ -280,10 +343,13 @@ export async function createPlan(
       const plainStem = segments.pop()!;
       const newStem = version ? safeName(`${plainStem} - ${version.label}`) : plainStem;
       const extension = path.extname(file.path).toLowerCase();
+      const inTitle = titleRoots.has(file.root);
+      const titleFolder = () =>
+        inTitle ? file.root : resolveFolder(file.root, segments.slice(0, 1));
       const folder =
         options.organize === false
           ? parent
-          : await resolveFolder(file.root, segments);
+          : await resolveFolder(file.root, inTitle ? segments.slice(1) : segments);
       const target = path.join(folder, newStem + extension);
       const changes: Plan["previews"][number]["changes"] = [];
       const add = (op: Operation) => {
@@ -341,9 +407,7 @@ export async function createPlan(
           changes,
         };
         if (options.organize !== false && segments.length)
-          leaving.titles.add(
-            await resolveFolder(file.root, segments.slice(0, 1)),
-          );
+          leaving.titles.add(await titleFolder());
         leaving.folders.add(folder);
         leaving.videos.add(path.basename(file.path));
         leaving.kinds.add(media.kind);
@@ -363,10 +427,10 @@ export async function createPlan(
       // Artwork belongs to a title's own folder, so it needs a template that makes one.
       // It is decided after the loop, once everything being moved into each folder is known.
       if (options.artwork && options.organize !== false && segments.length) {
-        const titleFolder = await resolveFolder(file.root, segments.slice(0, 1));
+        const artFolder = await titleFolder();
         for (const { stem, from, taken } of ARTWORK)
           wanted.push({
-            folder: titleFolder,
+            folder: artFolder,
             stem,
             url: media[from],
             taken: (name) => (taken as readonly string[]).includes(name),
@@ -543,7 +607,11 @@ export async function createPlan(
       issues.push({ target: op.target, message: messageOf(error) });
     }
   }
-  if (!operations.length && !errors.length)
+  // A folder whose name differs only by case is kept as it is, like any other.
+  const renames: RenameOperation[] = [...titleRoots]
+    .filter(([root, target]) => key(root) !== key(target))
+    .map(([source, target]) => ({ type: "rename", source, target }));
+  if (!operations.length && !renames.length && !errors.length)
     errors.push("These files already have their proposed names.");
   const rmdirs =
     options.removeEmpty === false || errors.length
@@ -555,8 +623,9 @@ export async function createPlan(
     previews,
     sourceChecks,
     // Folders first, parents before children, so every move has somewhere to land;
-    // emptied source folders last, children before parents.
-    operations: [...mkdirs.values(), ...operations, ...rmdirs],
+    // emptied source folders after, children before parents; an imported folder takes
+    // its new name last, once nothing else needs its old one.
+    operations: [...mkdirs.values(), ...operations, ...rmdirs, ...renames],
     errors,
     issues,
   };
@@ -745,6 +814,7 @@ export async function applyPlan(
   await append(journal, { type: "plan", plan });
   let completed = 0;
   const warnings: string[] = [];
+  const renamed: { from: string; to: string }[] = [];
   try {
     for (const [index, op] of plan.operations.entries()) {
       await append(journal, { type: "intent", index });
@@ -780,6 +850,20 @@ export async function applyPlan(
           if (!["ENOENT", "ENOTEMPTY", "EEXIST"].includes(codeOf(error)))
             throw error;
         }
+      } else if (op.type === "rename") {
+        try {
+          // rename() would replace an empty folder of the same name, so check first.
+          if (await exists(op.target))
+            throw new Error("A folder with the new name already exists.");
+          await fs.rename(op.source, op.target);
+          renamed.push({ from: op.source, to: op.target });
+        } catch (error) {
+          // Everything inside is already in place; the folder just keeps its old name.
+          const message = messageOf(error);
+          warnings.push(`${path.basename(op.source)}: ${message}`);
+          await append(journal, { type: "skipped", index, message });
+          continue;
+        }
       } else if (op.type === "write") {
         const handle = await fs.open(op.target, "wx", 0o644);
         try {
@@ -797,13 +881,16 @@ export async function applyPlan(
       });
     }
     await append(journal, { type: "complete" });
-    return { id: plan.id, completed, warnings };
+    return { id: plan.id, completed, warnings, renamed };
   } catch (error) {
     await append(journal, { type: "failed", message: messageOf(error) }).catch(
       () => {},
     );
-    throw new Error(
-      `Stopped after ${completed} operations: ${messageOf(error)} Open History to review or undo this batch.`,
+    throw Object.assign(
+      new Error(
+        `Stopped after ${completed} operations: ${messageOf(error)} Open History to review or undo this batch.`,
+      ),
+      { renamed },
     );
   }
 }
@@ -852,7 +939,8 @@ export async function history(journalDir: string): Promise<BatchSummary[]> {
             ? "complete"
             : "interrupted",
         operations: plan.operations.map((op) => ({
-          source: op.type === "move" ? op.source : undefined,
+          source:
+            op.type === "move" || op.type === "rename" ? op.source : undefined,
           target: op.target,
           type: op.type,
         })),
@@ -882,6 +970,7 @@ export async function undoBatch(
     throw new Error("This batch has already been undone.");
   const started = indexesOf(events, "intent");
   const reversed = indexesOf(events, "undo-done");
+  const renamed: { from: string; to: string }[] = [];
   for (const [index, op] of [...plan.operations.entries()].reverse()) {
     if (!started.has(index) || reversed.has(index)) continue;
     if (op.type === "mkdir") {
@@ -907,6 +996,22 @@ export async function undoBatch(
         saved.size === size.size
       )
         await fs.unlink(op.target);
+      await append(file, { type: "undo-done", index });
+      continue;
+    }
+    if (op.type === "rename") {
+      const source = await exists(op.source);
+      const target = await exists(op.target);
+      if (target && !source) {
+        await fs.rename(op.target, op.source);
+        renamed.push({ from: op.target, to: op.source });
+      } else if (
+        target &&
+        events.some((e) => e.type === "done" && e.index === index)
+      )
+        throw new Error(
+          `Both folder names are in use; recovery stopped: ${op.source}`,
+        );
       await append(file, { type: "undo-done", index });
       continue;
     }
@@ -956,5 +1061,5 @@ export async function undoBatch(
     await append(file, { type: "undo-done", index });
   }
   await append(file, { type: "undone" });
-  return { id };
+  return { id, renamed };
 }

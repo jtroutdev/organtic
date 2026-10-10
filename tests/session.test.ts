@@ -88,8 +88,8 @@ test("groups a folder, suggests confident matches and flags the rest", async (t)
   assert.deepEqual(
     severance.files.map((file) => [file.label, file.target ?? file.issue]),
     [
-      ["S01E01", "Severance (2022) {tmdb-95396}/Season 01/Severance (2022) - S01E01 - Part 1.mkv"],
-      ["S01E02-E03", "Severance (2022) {tmdb-95396}/Season 01/Severance (2022) - S01E02-E03 - Part 2 & Part 3.mkv"],
+      ["S01E01", "Severance (2022)/Season 01/Severance (2022) - S01E01 - Part 1.mkv"],
+      ["S01E02-E03", "Severance (2022)/Season 01/Severance (2022) - S01E02-E03 - Part 2 & Part 3.mkv"],
       ["S01E09", "Season 1 episode 9 was not found for this show."],
     ],
   );
@@ -139,11 +139,11 @@ test("confirming, previewing and applying renames files and keeps the rest of th
 
   const preview = await session.preview();
   assert.equal(preview.blocked, false);
-  assert.deepEqual(preview.counts, { videos: 2, subtitles: 1, metadata: 0, artwork: 0, folders: 3, removed: 0, left: 2, operations: 6 });
+  assert.deepEqual(preview.counts, { videos: 2, subtitles: 1, metadata: 0, artwork: 0, folders: 3, removed: 0, renamed: 0, left: 2, operations: 6 });
   assert.deepEqual(preview.newFolders, [
-    "Arrival (2016) {tmdb-329865}",
-    "Severance (2022) {tmdb-95396}",
-    "Severance (2022) {tmdb-95396}/Season 01",
+    "Arrival (2016)",
+    "Severance (2022)",
+    "Severance (2022)/Season 01",
   ]);
   const severance = preview.groups.find((g) => g.title === "Severance")!;
   assert.deepEqual(severance.left, ["Severance.S01E09.mkv"]);
@@ -152,9 +152,9 @@ test("confirming, previewing and applying renames files and keeps the rest of th
     [["video", "Severance.S01E01.mkv"], ["subtitle", "Severance.S01E01.en.srt"]],
   );
 
-  assert.deepEqual(await session.apply(preview.id), { id: preview.id, completed: 6, warnings: [] });
-  await fs.access(path.join(dir, "Severance (2022) {tmdb-95396}/Season 01/Severance (2022) - S01E01 - Part 1.en.srt"));
-  await fs.access(path.join(dir, "Arrival (2016) {tmdb-329865}/Arrival (2016).mkv"));
+  assert.deepEqual(await session.apply(preview.id), { id: preview.id, completed: 6, warnings: [], renamed: [] });
+  await fs.access(path.join(dir, "Severance (2022)/Season 01/Severance (2022) - S01E01 - Part 1.en.srt"));
+  await fs.access(path.join(dir, "Arrival (2016)/Arrival (2016).mkv"));
   // Unconfirmed and left-out files are still queued.
   assert.deepEqual(
     session.state().groups.map((g) => [g.parsedTitle, g.status, g.files.length]),
@@ -166,7 +166,7 @@ test("choosing, searching again and changing settings update the queue", async (
   const { session, group } = await setup(t, ["Solaris.mkv", "Movies/Arival.2016.mkv"]);
   await session.choose(group("Solaris").key, 1);
   assert.equal(group("Solaris").status, "confirmed");
-  assert.equal(group("Solaris").files[0]!.target, "Solaris (2002) {tmdb-2103}/Solaris (2002).mkv");
+  assert.equal(group("Solaris").files[0]!.target, "Solaris (2002)/Solaris (2002).mkv");
 
   const typo = group("Arival");
   assert.equal(typo.status, "unmatched");
@@ -200,7 +200,7 @@ test("films need a TMDB token, extras can be included, and the destination can c
   // "in" still holds the excluded sample, so it stays.
   assert.deepEqual(preview.removedFolders, []);
   await session.apply(preview.id);
-  await fs.access(path.join(dir, "library/Arrival (2016) {tmdb-329865}/Arrival (2016).mkv"));
+  await fs.access(path.join(dir, "library/Arrival (2016)/Arrival (2016).mkv"));
 
   const offline = new Session({
     providers: new Providers({ fetcher: tmdb }),
@@ -210,6 +210,43 @@ test("films need a TMDB token, extras can be included, and the destination can c
   await fs.writeFile(path.join(dir, "in/Arrival.2016.720p.mkv"), "another copy");
   await offline.addFiles(await scanPaths([path.join(dir, "in")]));
   assert.match(offline.state().groups[0]!.reason, /Add a TMDB token/);
+});
+
+test("an imported show folder is renamed, and files left in the queue follow it", async (t) => {
+  const { dir } = await setup(t, [
+    "Severance/Severance.S01E01.1080p.mkv",
+    "Severance/Severance.S01E09.1080p.mkv",
+  ]);
+  const providers = new Providers({ fetcher: tmdb });
+  providers.setToken("test");
+  const session = new Session({
+    providers,
+    settings: DEFAULT_SETTINGS,
+    planner: { createPlan, applyPlan: (plan) => applyPlan(plan, path.join(dir, ".journals")) },
+  });
+  await session.addFiles(await scanPaths([path.join(dir, "Severance")]));
+  assert.equal(session.state().destination, path.join(dir, "Severance"));
+  session.confirmSuggested();
+  const preview = await session.preview();
+  // The folder is shown under its new name, beside its old one, not inside it.
+  assert.equal(preview.destination, dir);
+  assert.deepEqual(preview.renamedFolders, [{ from: "Severance", to: "Severance (2022)" }]);
+  assert.deepEqual(preview.newFolders, ["Severance (2022)/Season 01"]);
+  assert.deepEqual(
+    preview.groups[0]!.items.map((item) => [item.from, item.to]),
+    [["Severance.S01E01.1080p.mkv", "Severance (2022)/Season 01/Severance (2022) - S01E01 - Part 1.mkv"]],
+  );
+  assert.equal(preview.counts.renamed, 1);
+  await session.apply(preview.id);
+  await fs.access(path.join(dir, "Severance (2022)/Season 01/Severance (2022) - S01E01 - Part 1.mkv"));
+  // The episode that was not matched is still queued, under the folder's new name.
+  const state = session.state();
+  assert.equal(state.destination, path.join(dir, "Severance (2022)"));
+  assert.deepEqual(state.groups[0]!.files.map((file) => file.source), ["Severance.S01E09.1080p.mkv"]);
+  await fs.access(path.join(state.destination, "Severance.S01E09.1080p.mkv"));
+  // Undoing the batch elsewhere gives the folder its old name back, and the queue follows.
+  session.relocate([{ from: path.join(dir, "Severance (2022)"), to: path.join(dir, "Severance") }]);
+  assert.equal(session.state().destination, path.join(dir, "Severance"));
 });
 
 test("settings reject unusable templates and ignore junk", () => {
@@ -593,7 +630,7 @@ test("every source is searched, and one that fails is named without hiding the r
     [["tmdb", 2022], ["tvmaze", 2022], ["tvmaze", 2006]],
   );
   assert.deepEqual([group().status, group().chosen], ["suggested", 0]);
-  assert.match(group().files[0]!.target!, /\{tmdb-95396\}/);
+  assert.match(group().files[0]!.target!, /^Severance \(2022\)\//);
   // Nothing about the name says anime, so Kitsu was not asked.
   assert.deepEqual([group().anime, kitsuAsked], [false, 0]);
 

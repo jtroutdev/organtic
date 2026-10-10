@@ -1,9 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { AnimeMap, buildIndex, parseExceptions, placeEpisode } from "../core/animeMap.ts";
-import { PLEX_TEMPLATES, renderTemplate } from "../core/naming.ts";
+import { renderTemplate } from "../core/naming.ts";
 import { Providers } from "../core/providers.ts";
 import type { Candidate, ResolveResult } from "../core/types.ts";
+
+// Plex's optional ID tag, which the preset leaves out; here it shows which catalogue's ID was used.
+const TAGGED = {
+  movie: "{title} ({year}) {{idsource}-{id}}/{title} ({year})",
+  episode:
+    "{title} ({year}) {{idsource}-{id}}/Season {season:00}/{title} ({year}) - S{season:00}E{episode:00} - {episodeTitle}",
+};
 
 // Entries shaped like the community list, plus some that must be ignored.
 const LIST = [
@@ -63,7 +70,7 @@ const XML = `<?xml version="1.0"?>
   <anime anidbid="oops" tvdbid="1"><mapping-list><mapping anidbseason="1" tvdbseason="1" start="1" end="2" offset="5"/></mapping-list></anime>
 </anime-list>`;
 const names = (results: ResolveResult[]) =>
-  results.map((result) => ("media" in result ? renderTemplate(PLEX_TEMPLATES.episode, result.media).join("/") : result.error));
+  results.map((result) => ("media" in result ? renderTemplate(TAGGED.episode, result.media).join("/") : result.error));
 
 test("the list is reduced to checked numbers keyed by Kitsu ID", () => {
   const index = buildIndex(LIST);
@@ -121,7 +128,7 @@ test("Kitsu entries are placed in their TMDB or TVDB season", async () => {
   // Films get their TMDB tag.
   const [film] = await providers.resolveMany(entry(11614, "movie"), [{ season: null, episode: 1 }]);
   assert.ok("media" in film!);
-  assert.deepEqual(renderTemplate(PLEX_TEMPLATES.movie, film.media), ["Entry (2020) {tmdb-372058}", "Entry (2020)"]);
+  assert.deepEqual(renderTemplate(TAGGED.movie, film.media), ["Entry (2020) {tmdb-372058}", "Entry (2020)"]);
 });
 
 test("per-episode exceptions are read and applied before the season default", async () => {

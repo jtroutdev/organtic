@@ -20,10 +20,13 @@ const XML_ENTITIES: Record<string, string> = {
   ">": "&gt;",
   "&": "&amp;",
   '"': "&quot;",
-  "'": "&apos;",
 };
+// Only what XML requires is escaped, so a description reads as written: apostrophes and
+// quotation marks are left alone in text, and a quotation mark is escaped in an attribute.
 const xml = (value: unknown) =>
-  String(value ?? "").replace(/[<>&"']/g, (c) => XML_ENTITIES[c] ?? c);
+  String(value ?? "").replace(/[<>&]/g, (c) => XML_ENTITIES[c] ?? c);
+const attribute = (value: unknown) =>
+  String(value ?? "").replace(/[<>&"]/g, (c) => XML_ENTITIES[c] ?? c);
 
 export function makeNfo(media: MediaLike): string {
   const root = media.kind === "tv" ? "episodedetails" : "movie";
@@ -51,6 +54,6 @@ export function makeNfo(media: MediaLike): string {
       .filter(([, v]) => v !== null && v !== undefined && v !== "")
       .map(([k, v]) => `  <${k}>${xml(v)}</${k}>`)
       .join("\n") +
-    `\n  <uniqueid type="${xml(media.provider)}" default="true">${xml(media.episodeId || media.id)}</uniqueid>\n  <credits>${xml(source)}</credits>\n</${root}>\n`
+    `\n  <uniqueid type="${attribute(media.provider)}" default="true">${xml(media.episodeId || media.id)}</uniqueid>\n  <credits>${xml(source)}</credits>\n</${root}>\n`
   );
 }

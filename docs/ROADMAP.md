@@ -22,7 +22,8 @@
 - [x] Splitting and merging groups by moving one or several files between them
 - [x] Lookup progress and cancellation
 - [x] Removing source folders left empty after organising
-- [x] TVDB/IMDb folder tags for TVmaze matches
+- [x] TVDB/IMDb folder tags for TVmaze matches (custom templates; the Plex preset has no tag)
+- [x] Renaming an imported folder that is itself a title's folder, instead of nesting a second one
 - [x] Keyboard shortcuts and an automated accessibility audit with no violations
 - [x] Optional poster, backdrop and season poster downloads
 - [x] Moving existing NFO files and artwork with their video, folder or show

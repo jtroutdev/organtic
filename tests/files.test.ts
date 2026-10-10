@@ -281,17 +281,17 @@ test("organises a messy download into Plex folders and undoes it completely", as
     ["mkdir", "mkdir", "mkdir", "move", "move", "move", "move", "rmdir", "rmdir"],
   );
   await applyPlan(plan, lib.journals);
-  const show = "Severance (2022) {tmdb-95396}/Season 01/Severance (2022) - ";
+  const show = "Severance (2022)/Season 01/Severance (2022) - ";
   assert.deepEqual(await tree(lib.dir), [
-    "Arrival (2016) {tmdb-329865}/Arrival (2016).mkv",
+    "Arrival (2016)/Arrival (2016).mkv",
     `${show}S01E01 - Good News About Hell.en.srt`,
     `${show}S01E01 - Good News About Hell.mkv`,
     `${show}S01E02-E03 - Half Loop & In Perpetuity.mkv`,
   ]);
   // Both release folders were emptied, so they are gone.
   assert.deepEqual((await fs.readdir(lib.dir)).filter((n) => n !== ".journals").sort(), [
-    "Arrival (2016) {tmdb-329865}",
-    "Severance (2022) {tmdb-95396}",
+    "Arrival (2016)",
+    "Severance (2022)",
   ]);
   await undoBatch(plan.id, lib.journals);
   assert.deepEqual(await tree(lib.dir), [...messy].sort());
@@ -302,9 +302,103 @@ test("organises a messy download into Plex folders and undoes it completely", as
   ]);
 });
 
+test("an imported folder that is its title's own folder is renamed, not nested", async (t) => {
+  const original = [
+    "Severance/Season 1/Severance.S01E01.mkv",
+    "Severance/Season 1/Severance.S01E02.mkv",
+    "Severance/notes.txt",
+  ];
+  const lib = await library(t, original);
+  const root = path.join(lib.dir, "Severance");
+  const { files } = await scanPaths([root]);
+  assert.equal(files[0]!.root, root);
+  const plan = await createPlan(
+    files.map((file, index) => ({ file, media: episode(index + 1, `Part ${index + 1}`) })),
+    { nfo: true },
+  );
+  assert.deepEqual(plan.errors, []);
+  // Everything happens inside the folder under its old name; it takes its new one last.
+  assert.deepEqual(
+    plan.operations.map((op) => op.type),
+    ["mkdir", "move", "move", "write", "write", "rmdir", "rename"],
+  );
+  assert.deepEqual(plan.operations.at(-1), {
+    type: "rename",
+    source: root,
+    target: path.join(lib.dir, "Severance (2022)"),
+  });
+  const applied = await applyPlan(plan, lib.journals);
+  assert.deepEqual(applied.renamed, [{ from: root, to: path.join(lib.dir, "Severance (2022)") }]);
+  const show = "Severance (2022)/Season 01/Severance (2022) - ";
+  assert.deepEqual(await tree(lib.dir), [
+    `${show}S01E01 - Part 1.mkv`,
+    `${show}S01E01 - Part 1.nfo`,
+    `${show}S01E02 - Part 2.mkv`,
+    `${show}S01E02 - Part 2.nfo`,
+    // Whatever else was in the folder is still in it.
+    "Severance (2022)/notes.txt",
+  ]);
+  assert.deepEqual((await history(lib.journals))[0]!.operations.at(-1), {
+    type: "rename",
+    source: root,
+    target: path.join(lib.dir, "Severance (2022)"),
+  });
+  const undone = await undoBatch(plan.id, lib.journals);
+  assert.deepEqual(undone.renamed, [{ from: path.join(lib.dir, "Severance (2022)"), to: root }]);
+  assert.deepEqual(await tree(lib.dir), [...original].sort());
+});
+
+test("an imported folder keeps its name unless it is clearly one title's and the name is free", async (t) => {
+  const lib = await library(t, [
+    "Downloads/Severance.S01E01.mkv",
+    "Mixed/Severance.S01E01.mkv",
+    "Mixed/Arrival.2016.mkv",
+    "Severance/Severance.S01E01.mkv",
+    "Severance (2022)/keep.txt",
+    "arrival (2016) 1080p/Arrival.2016.mkv",
+    "elsewhere/ARRIVAL (2016)/Arrival.2016.mkv",
+    "Arrival (1996)/Arrival.2016.mkv",
+  ]);
+  const planFor = async (folder: string, options: PlanOptions = {}) => {
+    const { files } = await scanPaths([path.join(lib.dir, folder)]);
+    const plan = await createPlan(
+      files.map((file) => ({ file, media: /Arrival/.test(file.name) ? media : episode(1, "Pilot") })),
+      options,
+    );
+    assert.deepEqual(plan.errors, []);
+    return plan.operations.map((op) =>
+      [op.type, path.relative(lib.dir, op.target).replaceAll(path.sep, "/")].join(" "),
+    );
+  };
+  // Not named after the show, or holding more than one title: title folders go inside.
+  assert.deepEqual((await planFor("Downloads")).slice(0, 2), [
+    "mkdir Downloads/Severance (2022)",
+    "mkdir Downloads/Severance (2022)/Season 01",
+  ]);
+  assert.ok(!(await planFor("Mixed")).some((op) => op.startsWith("rename")));
+  // The new name already belongs to another folder.
+  assert.deepEqual(await planFor("Severance"), [
+    "mkdir Severance/Severance (2022)",
+    "mkdir Severance/Severance (2022)/Season 01",
+    "move Severance/Severance (2022)/Season 01/Severance (2022) - S01E01 - Pilot.mkv",
+  ]);
+  // A release folder for one film: the film is renamed where it is, then the folder.
+  assert.deepEqual(await planFor("arrival (2016) 1080p"), [
+    "move arrival (2016) 1080p/Arrival (2016).mkv",
+    "rename Arrival (2016)",
+  ]);
+  // A name that differs only by case is kept; one with another year is another title.
+  assert.deepEqual(await planFor("elsewhere/ARRIVAL (2016)"), ["move elsewhere/ARRIVAL (2016)/Arrival (2016).mkv"]);
+  assert.ok(!(await planFor("Arrival (1996)")).some((op) => op.startsWith("rename")));
+  // Renaming in place never touches folders.
+  assert.deepEqual(await planFor("arrival (2016) 1080p", { organize: false }), [
+    "move arrival (2016) 1080p/Arrival (2016).mkv",
+  ]);
+});
+
 test("reuses an existing show folder that differs only by case, and keeps it on undo", async (t) => {
   const lib = await library(t, [
-    "severance (2022) {tmdb-95396}/Season 01/keep.txt",
+    "severance (2022)/Season 01/keep.txt",
     "Severance.S01E01.mkv",
   ]);
   const plan = await createPlan([
@@ -317,17 +411,17 @@ test("reuses an existing show folder that differs only by case, and keeps it on 
   );
   await applyPlan(plan, lib.journals);
   const moved =
-    "severance (2022) {tmdb-95396}/Season 01/Severance (2022) - S01E01 - Pilot.mkv";
+    "severance (2022)/Season 01/Severance (2022) - S01E01 - Pilot.mkv";
   assert.ok((await tree(lib.dir)).includes(moved));
   await undoBatch(plan.id, lib.journals);
   assert.deepEqual(await tree(lib.dir), [
     "Severance.S01E01.mkv",
-    "severance (2022) {tmdb-95396}/Season 01/keep.txt",
+    "severance (2022)/Season 01/keep.txt",
   ]);
 });
 
 test("a file in the way of a planned folder blocks the plan", async (t) => {
-  const lib = await library(t, ["Arrival.2016.mkv", "Arrival (2016) {tmdb-329865}"]);
+  const lib = await library(t, ["Arrival.2016.mkv", "Arrival (2016)"]);
   const plan = await createPlan([{ file: lib.byName("Arrival.2016.mkv"), media }]);
   assert.match(plan.errors.join(), /in the way/);
 });
@@ -376,7 +470,7 @@ test("copies of one episode are named as versions, the best keeping the plain na
       ["Severance (2022) - S01E01 - One - Copy 2.mkv", 'likely an exact duplicate of "Severance.S01E01.mkv"'],
     ],
   );
-  const season = "Severance (2022) {tmdb-95396}/Season 01";
+  const season = "Severance (2022)/Season 01";
   await applyPlan(plan, lib.journals);
   assert.deepEqual(
     (await tree(lib.dir)).filter((name) => name.startsWith(season)).map((name) => path.basename(name)),
@@ -401,7 +495,7 @@ test("falls back to a guarded rename where hard links are unsupported", async (t
   };
   const plan = await createPlan([{ file: f.file, media }]);
   await applyPlan(plan, f.journals, noLinks);
-  const target = path.join(f.dir, "Arrival (2016) {tmdb-329865}/Arrival (2016).mkv");
+  const target = path.join(f.dir, "Arrival (2016)/Arrival (2016).mkv");
   assert.equal(await fs.readFile(target, "utf8"), "untouched video bytes");
   await assert.rejects(fs.stat(f.source), { code: "ENOENT" });
   await undoBatch(plan.id, f.journals, noLinks);
@@ -429,7 +523,7 @@ test("removes only the source folders a batch truly empties", async (t) => {
     "Kept/Season 1/notes.txt",
     "Hidden/Severance.S01E04.mkv",
     "Hidden/.nomedia",
-    "Severance (2022) {tmdb-95396}/S1/Severance.S01E05.mkv",
+    "Severance (2022)/S1/Severance.S01E05.mkv",
   ]);
   const titles: Record<string, number> = { E01: 1, E02: 2, E04: 4, E05: 5 };
   const selections = lib.files.map((file) => {
@@ -446,7 +540,7 @@ test("removes only the source folders a batch truly empties", async (t) => {
   // Children before parents; a folder with a leftover or hidden file, a folder that
   // receives files, and the imported folder itself all stay.
   assert.deepEqual(rmdirs(plan), [
-    "Severance (2022) {tmdb-95396}/S1",
+    "Severance (2022)/S1",
     "Severance/Season 1",
     "Severance",
   ]);
@@ -468,13 +562,13 @@ test("removes only the source folders a batch truly empties", async (t) => {
     "Kept",
     "Kept/Season 1",
     "Severance",
-    "Severance (2022) {tmdb-95396}",
-    "Severance (2022) {tmdb-95396}/Season 01",
+    "Severance (2022)",
+    "Severance (2022)/Season 01",
     "Severance/Season 1",
   ]);
   await undoBatch(plan.id, lib.journals);
-  assert.ok((await folders()).includes("Severance (2022) {tmdb-95396}/S1"));
-  await fs.access(path.join(lib.dir, "Severance (2022) {tmdb-95396}/S1/Severance.S01E05.mkv"));
+  assert.ok((await folders()).includes("Severance (2022)/S1"));
+  await fs.access(path.join(lib.dir, "Severance (2022)/S1/Severance.S01E05.mkv"));
   await fs.access(path.join(lib.dir, "Severance/Season 1/Severance.S01E01.mkv"));
 });
 
@@ -484,7 +578,7 @@ test("downloads posters and backdrops into title folders without replacing or fa
     "Severance.S01E02.mkv",
     "Arrival.2016.mkv",
     "Dune.2021.mkv",
-    "Dune (2021) {tmdb-438631}/Poster.PNG",
+    "Dune (2021)/Poster.PNG",
   ]);
   const art = (name: string) => ({
     posterUrl: `https://image.tmdb.org/t/p/original/${name}-poster.jpg`,
@@ -507,10 +601,10 @@ test("downloads posters and backdrops into title folders without replacing or fa
   assert.deepEqual(plan.errors, []);
   // Once per title folder; an address from an unknown host is ignored; Dune already has a poster.
   assert.deepEqual(downloads(plan), [
-    "Severance (2022) {tmdb-95396}/poster.jpg",
-    "Severance (2022) {tmdb-95396}/fanart.png",
-    "Arrival (2016) {tmdb-329865}/poster.jpg",
-    "Dune (2021) {tmdb-438631}/fanart.png",
+    "Severance (2022)/poster.jpg",
+    "Severance (2022)/fanart.png",
+    "Arrival (2016)/poster.jpg",
+    "Dune (2021)/fanart.png",
   ]);
 
   const requested: string[] = [];
@@ -534,22 +628,22 @@ test("downloads posters and backdrops into title folders without replacing or fa
   // Every rename still happened, and only the two good images were saved.
   assert.equal(result.completed, plan.operations.length - 2);
   const files = await tree(lib.dir);
-  assert.ok(files.includes("Arrival (2016) {tmdb-329865}/Arrival (2016).mkv"));
+  assert.ok(files.includes("Arrival (2016)/Arrival (2016).mkv"));
   assert.deepEqual(files.filter((name) => /poster|fanart/i.test(name)), [
-    "Dune (2021) {tmdb-438631}/Poster.PNG",
-    "Severance (2022) {tmdb-95396}/fanart.png",
-    "Severance (2022) {tmdb-95396}/poster.jpg",
+    "Dune (2021)/Poster.PNG",
+    "Severance (2022)/fanart.png",
+    "Severance (2022)/poster.jpg",
   ]);
   assert.equal((await history(lib.journals))[0]!.status, "complete");
 
   // Undo removes the images it saved, except one that has since been replaced by hand.
-  await fs.writeFile(path.join(lib.dir, "Severance (2022) {tmdb-95396}/poster.jpg"), "my own poster, a different size");
+  await fs.writeFile(path.join(lib.dir, "Severance (2022)/poster.jpg"), "my own poster, a different size");
   await undoBatch(plan.id, lib.journals);
   assert.deepEqual(await tree(lib.dir), [
     "Arrival.2016.mkv",
-    "Dune (2021) {tmdb-438631}/Poster.PNG",
+    "Dune (2021)/Poster.PNG",
     "Dune.2021.mkv",
-    "Severance (2022) {tmdb-95396}/poster.jpg",
+    "Severance (2022)/poster.jpg",
     "Severance.S01E01.mkv",
     "Severance.S01E02.mkv",
   ]);
@@ -562,7 +656,7 @@ test("downloads one poster per season beside its episodes", async (t) => {
     "Severance.S02E01.mkv",
     "Severance.S00E01.mkv",
     "Severance.S03E01.mkv",
-    "Severance (2022) {tmdb-95396}/Season 03/Season03.png",
+    "Severance (2022)/Season 03/Season03.png",
   ]);
   const poster = (season: number) => ({
     season,
@@ -579,7 +673,7 @@ test("downloads one poster per season beside its episodes", async (t) => {
     plan.operations
       .filter((op) => op.type === "download")
       .map((op) => path.relative(lib.dir, op.target).replaceAll(path.sep, "/"));
-  const show = "Severance (2022) {tmdb-95396}";
+  const show = "Severance (2022)";
   // Once per season; season 3 already has a poster under Plex's other name.
   assert.deepEqual(downloads(await createPlan(selections, { artwork: true })), [
     `${show}/Season 01/season01-poster.jpg`,
@@ -619,7 +713,7 @@ test("existing NFO files and artwork move with their video or its folder", async
     // The destination already has a poster; the incoming one stays behind.
     "Solaris.1972/Solaris.1972.mkv",
     "Solaris.1972/poster.jpg",
-    "Solaris (1972) {tmdb-593}/poster.jpg",
+    "Solaris (1972)/poster.jpg",
   ]);
   const film = (title: string, year: number, id: number, extra: Partial<Media> = {}): Media => ({
     ...media, title, year, id, ...extra,
@@ -649,27 +743,27 @@ test("existing NFO files and artwork move with their video or its folder", async
   );
   await applyPlan(plan, lib.journals);
   assert.deepEqual(await tree(lib.dir), [
-    "Arrival (2016) {tmdb-329865}/Arrival (2016)-poster.jpg",
-    "Arrival (2016) {tmdb-329865}/Arrival (2016).en.srt",
-    "Arrival (2016) {tmdb-329865}/Arrival (2016).mkv",
-    "Arrival (2016) {tmdb-329865}/Arrival (2016).nfo",
-    "Arrival (2016) {tmdb-329865}/fanart.jpg",
-    "Arrival (2016) {tmdb-329865}/movie.nfo",
-    "Arrival (2016) {tmdb-329865}/poster.jpg",
+    "Arrival (2016)/Arrival (2016)-poster.jpg",
+    "Arrival (2016)/Arrival (2016).en.srt",
+    "Arrival (2016)/Arrival (2016).mkv",
+    "Arrival (2016)/Arrival (2016).nfo",
+    "Arrival (2016)/fanart.jpg",
+    "Arrival (2016)/movie.nfo",
+    "Arrival (2016)/poster.jpg",
     "Arrival.2016.1080p/notes.txt",
-    "Dune (2021) {tmdb-438631}/Dune (2021).mkv",
-    "Dune (2021) {tmdb-438631}/Dune (2021).nfo",
+    "Dune (2021)/Dune (2021).mkv",
+    "Dune (2021)/Dune (2021).nfo",
     "Mixed/Dune.2021-2-poster.jpg",
     "Mixed/Dune.2021-2.mkv",
     "Mixed/poster.jpg",
-    "Severance (2022) {tmdb-95396}/Season 01/Severance (2022) - S01E01 - One-thumb.jpg",
-    "Severance (2022) {tmdb-95396}/Season 01/Severance (2022) - S01E01 - One.mkv",
-    "Severance (2022) {tmdb-95396}/Season 01/Severance (2022) - S01E01 - One.nfo",
-    "Severance (2022) {tmdb-95396}/Season 01/season01-poster.jpg",
+    "Severance (2022)/Season 01/Severance (2022) - S01E01 - One-thumb.jpg",
+    "Severance (2022)/Season 01/Severance (2022) - S01E01 - One.mkv",
+    "Severance (2022)/Season 01/Severance (2022) - S01E01 - One.nfo",
+    "Severance (2022)/Season 01/season01-poster.jpg",
     "Show/Season 1/poster.jpg",
-    "Solaris (1972) {tmdb-593}/Solaris (1972).mkv",
-    "Solaris (1972) {tmdb-593}/Solaris (1972).nfo",
-    "Solaris (1972) {tmdb-593}/poster.jpg",
+    "Solaris (1972)/Solaris (1972).mkv",
+    "Solaris (1972)/Solaris (1972).nfo",
+    "Solaris (1972)/poster.jpg",
     "Solaris.1972/poster.jpg",
   ]);
   await undoBatch(plan.id, lib.journals);
@@ -719,7 +813,7 @@ test("a show's own files follow it only when the whole show is reorganised", asy
   // Severance brings its own poster, so only the other two shows get one downloaded.
   assert.deepEqual(
     plan.operations.filter((op) => op.type === "download").map((op) => path.relative(lib.dir, op.target).replaceAll(path.sep, "/")),
-    ["The Bear (2022) {tmdb-136315}/poster.jpg", "Andor (2022) {tmdb-83867}/poster.jpg"],
+    ["The Bear (2022)/poster.jpg", "Andor (2022)/poster.jpg"],
   );
   await applyPlan(plan, lib.journals, {
     link: fs.link,
@@ -727,12 +821,12 @@ test("a show's own files follow it only when the whole show is reorganised", asy
     fetch: (async () => new Response("image", { headers: { "content-type": "image/jpeg" } })) as typeof fetch,
   });
   const after = await tree(lib.dir);
-  const sev = "Severance (2022) {tmdb-95396}";
+  const sev = "Severance (2022)";
   for (const name of ["tvshow.nfo", "poster.jpg", "fanart.jpg", "season01-poster.jpg"])
     assert.ok(after.includes(`${sev}/${name}`), name);
   assert.ok(after.includes("Severance/notes.txt"));
-  assert.ok(after.includes("The Bear (2022) {tmdb-136315}/tvshow.nfo"));
-  assert.ok(after.includes("The Bear (2022) {tmdb-136315}/banner.jpg"));
+  assert.ok(after.includes("The Bear (2022)/tvshow.nfo"));
+  assert.ok(after.includes("The Bear (2022)/banner.jpg"));
   // The emptied flat show folder is gone; the partly reorganised show keeps its files.
   assert.ok(!after.some((name) => name.startsWith("Flat Show/")));
   assert.ok(after.includes("Partial/tvshow.nfo") && after.includes("Partial/poster.jpg"));

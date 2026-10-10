@@ -237,7 +237,7 @@ const planner: Planner = {
       status: "complete",
       operations: plan.operations.map((op) => ({
         type: op.type,
-        source: op.type === "move" ? op.source : undefined,
+        source: op.type === "move" || op.type === "rename" ? op.source : undefined,
         target: op.target,
       })),
     });
