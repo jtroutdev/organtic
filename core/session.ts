@@ -30,7 +30,13 @@ export interface Planner {
   createPlan(selections: Selection[], options: PlanOptions): Promise<Plan>;
   applyPlan(
     plan: Plan,
-  ): Promise<{ id: string; completed: number; warnings?: string[] }>;
+  ): Promise<{
+    id: string;
+    completed: number;
+    warnings?: string[];
+    /** Imported folders that now have a new name. */
+    renamed?: { from: string; to: string }[];
+  }>;
 }
 
 interface Group {
@@ -858,6 +864,21 @@ export class Session {
     );
     this.plan = { plan, fileIds: selections.map(({ file }) => file.id) };
 
+    // An imported folder that takes its title's name is shown under that name, beside its
+    // old one, the way a new title folder would be.
+    const renames = plan.operations.filter((op) => op.type === "rename");
+    const shown = (target: string, root: string) => {
+      const rename = renames.find((op) => op.source === root);
+      const inside = relativeTo(target, root);
+      return (
+        rename
+          ? [relativeTo(rename.target, parentOf(rename.target)), inside]
+          : [inside]
+      )
+        .join("/")
+        .split(separatorOf(target))
+        .join("/");
+    };
     const attached = new Set<object>();
     const problemFor = (match: (issue: Plan["issues"][number]) => boolean) => {
       const found = plan.issues.filter(match);
@@ -894,7 +915,7 @@ export class Session {
                 : SUBTITLE.test(from)
                   ? "subtitle"
                   : "video",
-          to: relativeTo(target, file.root).split(separatorOf(target)).join("/"),
+          to: shown(target, file.root),
           from: from && relativeTo(from, this.files.get(file.id)!.root),
           problem: problemFor((issue) => issue.target === target),
           note: note ?? null,
@@ -918,7 +939,10 @@ export class Session {
     const count = (kind: PreviewItem["kind"]) =>
       items.filter((item) => item.kind === kind).length;
     const folders = plan.operations.filter((op) => op.type === "mkdir");
-    const destination = this.state().destination;
+    const queued = this.state().destination;
+    const destination = renames.some((op) => op.source === queued)
+      ? parentOf(queued)
+      : queued;
     const roots = [...new Set(selections.map((item) => item.sourceRoot!))];
     const removed = plan.operations
       .filter((op) => op.type === "rmdir")
@@ -931,9 +955,16 @@ export class Session {
       destination,
       groups: list,
       newFolders: folders.map((op) =>
-        relativeTo(op.target, destination).split(separatorOf(op.target)).join("/"),
+        shown(
+          op.target,
+          renames.find((item) => op.target.startsWith(item.source))?.source ?? queued,
+        ),
       ),
       removedFolders: removed,
+      renamedFolders: renames.map((op) => ({
+        from: relativeTo(op.source, parentOf(op.source)),
+        to: relativeTo(op.target, parentOf(op.target)),
+      })),
       counts: {
         videos: count("video"),
         subtitles: count("subtitle"),
@@ -941,6 +972,7 @@ export class Session {
         artwork: count("artwork"),
         folders: folders.length,
         removed: removed.length,
+        renamed: renames.length,
         left: list.reduce((total, group) => total + group.left.length, 0),
         operations: plan.operations.length,
       },
@@ -965,8 +997,15 @@ export class Session {
     const pending = this.plan;
     if (!pending || pending.plan.id !== id)
       throw new Error("The queue changed. Open Preview again first.");
+    let renamed: { from: string; to: string }[] = [];
     try {
-      return await this.planner.applyPlan(pending.plan);
+      const result = await this.planner.applyPlan(pending.plan);
+      renamed = result.renamed ?? [];
+      return result;
+    } catch (error) {
+      const partial = (error as { renamed?: unknown } | null)?.renamed;
+      if (Array.isArray(partial)) renamed = partial;
+      throw error;
     } finally {
       // Whether or not every operation ran, these paths can no longer be trusted.
       const gone = new Set(pending.fileIds);
@@ -985,7 +1024,21 @@ export class Session {
         }
       }
       if (!this.files.size) this.destination = null;
-      this.changed();
+      this.relocate(renamed);
     }
+  }
+
+  /** Follows folders that were renamed, by a batch or by undoing one, so queued files are still found. */
+  relocate(renamed: { from: string; to: string }[]) {
+    const moved = (value: string) => {
+      for (const { from, to } of renamed)
+        if (value === from || value.startsWith(from + separatorOf(from)))
+          return to + value.slice(from.length);
+      return value;
+    };
+    for (const [id, file] of this.files)
+      this.files.set(id, { ...file, path: moved(file.path), root: moved(file.root) });
+    if (this.destination !== null) this.destination = moved(this.destination);
+    this.changed();
   }
 }

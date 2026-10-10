@@ -28,6 +28,8 @@ interface Row {
   depth: number;
   name: string;
   isNew: boolean;
+  /** The name an imported folder had before it took its title's. */
+  was?: string;
   item?: PreviewItem;
 }
 /** The selected group's changes as an indented folder tree, folders before their contents. */
@@ -42,7 +44,12 @@ const rows = computed<Row[]>(() => {
       const folder = parts.slice(0, depth + 1).join("/");
       if (seen.has(folder)) return;
       seen.add(folder);
-      out.push({ depth, name: `${name}/`, isNew: created.has(folder) });
+      out.push({
+        depth,
+        name: `${name}/`,
+        isNew: created.has(folder),
+        was: preview.value?.renamedFolders.find((item) => item.to === folder)?.from,
+      });
     });
     out.push({ depth: parts.length - 1, name: parts.at(-1)!, isNew: false, item });
   }
@@ -81,8 +88,8 @@ const options = [
         <div v-if="store.applied.warnings.length" class="banner bad" role="status">
           <span
             ><b
-              >{{ plural(store.applied.warnings.length, "image") }} could not be
-              downloaded.</b
+              >{{ plural(store.applied.warnings.length, "change") }} could not be
+              made.</b
             >
             Everything else was applied.
             <span
@@ -165,6 +172,7 @@ const options = [
             <span><b>{{ preview.counts.videos }}</b>{{ preview.counts.videos === 1 ? "video" : "videos" }} moved</span>
             <span><b>{{ preview.counts.subtitles }}</b>subtitles</span>
             <span><b>{{ preview.counts.folders }}</b>folders created</span>
+            <span v-if="preview.counts.renamed"><b>{{ preview.counts.renamed }}</b>{{ preview.counts.renamed === 1 ? "folder" : "folders" }} renamed</span>
             <span v-if="preview.counts.removed"><b>{{ preview.counts.removed }}</b>empty {{ preview.counts.removed === 1 ? "folder" : "folders" }} removed</span>
             <span v-if="preview.counts.artwork"><b>{{ preview.counts.artwork }}</b>{{ preview.counts.artwork === 1 ? "image" : "images" }}</span>
             <span v-if="preview.counts.metadata"><b>{{ preview.counts.metadata }}</b>metadata files</span>
@@ -239,6 +247,8 @@ const options = [
             >
               <span>{{ row.name }}</span>
               <span v-if="row.isNew" class="tag">new folder</span>
+              <span v-if="row.was" class="tag">renamed</span>
+              <span v-if="row.was" class="src">from {{ row.was }}/</span>
               <template v-if="row.item">
                 <button
                   v-if="row.item.problem || row.item.note"

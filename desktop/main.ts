@@ -248,7 +248,9 @@ async function start() {
         "Undo batch",
       );
       if (!confirmed) return { canceled: true };
-      await undoBatch(id, journalDir);
+      const { renamed } = await undoBatch(id, journalDir);
+      // Files still queued under a folder that got its old name back are followed there.
+      if (renamed.length) session.relocate(renamed);
       return {};
     }),
   );

@@ -85,7 +85,7 @@ async function undo(id: string) {
             class="mono"
             style="padding: 6px 0; border-bottom: 1px solid var(--line)"
           >
-            <template v-if="op.type === 'move'"
+            <template v-if="op.type === 'move' || op.type === 'rename'"
               ><span class="muted">{{ op.source }}</span> → {{ op.target }}</template
             >
             <template v-else

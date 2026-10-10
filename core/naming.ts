@@ -3,15 +3,18 @@ import type { MediaKind, MediaLike, NamingTemplates } from "./types.ts";
 /**
  * Plex's recommended layout. Folders are separated by "/"; the last segment is the
  * filename without its extension. Placeholders that have no value are dropped together
- * with their empty brackets, so a match with no known ID simply has no ID tag.
+ * with their empty brackets.
+ *
+ * Folders are named by title and year alone, which Plex matches on. Its optional
+ * `{tmdb-…}` tag is left out because braces have to be percent-encoded wherever the path
+ * becomes a URL; a custom template can add it back as `{{idsource}-{id}}`.
  *
  * `{idsource}` and `{id}` give the best ID the match has: TMDB, then TVDB, then IMDb.
- * A TVmaze match therefore gets a `{tvdb-…}` or `{imdb-…}` tag, which Plex also reads.
  */
 export const PLEX_TEMPLATES: NamingTemplates = {
-  movie: "{title} ({year}) {{idsource}-{id}}/{title} ({year})",
+  movie: "{title} ({year})/{title} ({year})",
   episode:
-    "{title} ({year}) {{idsource}-{id}}/Season {season:00}/{title} ({year}) - S{season:00}E{episode:00} - {episodeTitle}",
+    "{title} ({year})/Season {season:00}/{title} ({year}) - S{season:00}E{episode:00} - {episodeTitle}",
 };
 
 export const JELLYFIN_TEMPLATES: NamingTemplates = {

@@ -104,6 +104,16 @@ export interface RmdirOperation {
   target: string;
 }
 
+/**
+ * Renames an imported folder that is itself one title's folder. It runs after everything
+ * else in the batch, so every other path in the plan stays valid while the batch is applied.
+ */
+export interface RenameOperation {
+  type: "rename";
+  source: string;
+  target: string;
+}
+
 /** Fetches a poster or backdrop into a title's folder; a failed download is skipped, not fatal. */
 export interface DownloadOperation {
   type: "download";
@@ -116,6 +126,7 @@ export type Operation =
   | MoveOperation
   | WriteOperation
   | RmdirOperation
+  | RenameOperation
   | DownloadOperation;
 
 export interface NamingTemplates {
@@ -349,6 +360,8 @@ export interface PreviewState {
   newFolders: string[];
   /** Source folders the batch empties and will remove. */
   removedFolders: string[];
+  /** Imported folders that will be renamed to their title's name; `to` is as it appears in `newFolders` and items. */
+  renamedFolders: { from: string; to: string }[];
   counts: {
     videos: number;
     subtitles: number;
@@ -356,6 +369,7 @@ export interface PreviewState {
     artwork: number;
     folders: number;
     removed: number;
+    renamed: number;
     left: number;
     operations: number;
   };
