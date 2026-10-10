@@ -77,6 +77,11 @@ const AIR_DATE =
 const SPECIAL = /\b(?:SP|Special|OVA|OAD) ?(\d{1,3})\b/i;
 // "Special 26" is also a film, so without a fansub tag only a " - " before it marks a special.
 const DASHED_SPECIAL = new RegExp(`\\s-\\s${SPECIAL.source}`, "i");
+// A production code with a segment letter, set off by dashes: "Show - 201a - Title", "310a&b - Title".
+// It gives the season; half-hours are split differently from one listing to the next, so the
+// episode is found by its name.
+const SEGMENT =
+  /(?:^\s*|\s-\s)([1-9]\d?)(?!00)\d{2}[a-d](?: ?& ?[a-d])?(?=\s+-\s|\s*$)/i;
 const SEASON_FOLDER =
   /^(?:(?:season|series|staffel|saison)[ ._-]?(\d{1,3})|S(\d{1,2}))$/i;
 // Folders Plex treats as extras rather than main features.
@@ -159,7 +164,7 @@ export function parseStem(stem: string): ParsedName {
   const releaseGroup = /^\[([^\]]+)\]/.exec(opened)?.[1] ?? null;
   // Bracketed blocks hold release details; parentheses are kept only around a year.
   const text = opened
-    .replace(/\[[^\]]*\]/g, " ")
+    .replace(/\[[^\]]*\]|\{[^}]*\}/g, " ")
     .replace(/\((?!(?:19|20)\d{2}\))[^)]*\)/g, " ")
     .replace(/[._]/g, " ");
 
@@ -193,6 +198,11 @@ export function parseStem(stem: string): ParsedName {
     episode = Number(special[1]);
     markerIndex = special.index;
     markerEnd = endOf(special);
+  } else if (SEGMENT.test(text)) {
+    const segment = SEGMENT.exec(text)!;
+    season = Number(segment[1]);
+    markerIndex = segment.index;
+    markerEnd = endOf(segment);
   } else {
     const seasonOnly = SEASON_ONLY.exec(text);
     const episodeOnly = EPISODE_ONLY.exec(text);
