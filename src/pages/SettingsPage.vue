@@ -291,7 +291,7 @@ const sections = computed<[string, string, string, string][]>(() => [
           <h3 class="sub">Kitsu</h3>
           <p class="muted">
             An anime catalogue with romaji, English and Japanese titles. Needs
-            no account. It is searched only for groups set to Anime on Review,
+            no account. It is searched only for groups set to Anime on Matching,
             where its results are offered beside the others. Each season or
             part is usually its own entry there.
           </p>

@@ -5,7 +5,7 @@ import { api, go, plural, run, store } from "../store.ts";
 const fileCount = computed(() =>
   store.queue.groups.reduce((total, item) => total + item.files.length, 0),
 );
-// Review opens on this page again if nothing was added.
+// Matching opens on this page again if nothing was added.
 async function add(action: () => Promise<unknown>) {
   await run(action);
   await go("review");
