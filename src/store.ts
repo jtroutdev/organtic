@@ -14,7 +14,7 @@ import { demoApi } from "./demo.ts";
 
 export const api: MediaApi = window.organtic ?? demoApi;
 
-export type Page = "review" | "preview" | "history" | "settings";
+export type Page = "add" | "review" | "preview" | "history" | "settings";
 export type Filter = "all" | "todo" | "confirmed";
 
 /** Pill colour and wording for each state a group can be in. */
@@ -28,6 +28,8 @@ export const STATUS: Record<GroupStatus, [tone: string, label: string]> = {
 
 export const store = reactive({
   page: "review" as Page,
+  /** The wizard page last shown, which the stepper keeps marking from History and Settings. */
+  wizard: "review" as "add" | "review" | "preview",
   queue: {
     groups: [],
     skipped: [],
@@ -146,7 +148,10 @@ export async function loadHistory() {
 export async function go(page: Page) {
   store.page = page;
   store.error = "";
+  // Leaving the result of a batch starts the next one from the queue.
+  if (page !== "preview" && store.applied) store.wizard = "review";
   if (page !== "preview") store.applied = null;
+  if (page === "add" || page === "review" || page === "preview") store.wizard = page;
   if (page === "preview") await loadPreview();
   if (page === "history") await loadHistory();
   store.visits++;

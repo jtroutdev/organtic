@@ -10,7 +10,7 @@ The referenced [FileBot fork's license](https://github.com/mobeigi/filebot/blob/
 
 | Layer                 | Responsibility                                                                                                |
 | --------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `src/`                | Vue interface: one store, four pages (Review, Preview, History, Settings) built on a shared split view         |
+| `src/`                | Vue interface: one store; a wizard (Add files, Review, Preview, Done) plus History and Settings, on a shared split view |
 | `desktop/main.ts`     | Native dialogs, saved settings, keychain-encrypted token, IPC sender checks; owns the session                  |
 | `desktop/preload.cjs` | Narrow named commands exposed across context isolation                                                        |
 | `core/parse.ts`       | Filename and folder hints: titles, years, season/episode, multi-episode ranges, absolute numbers, extras      |
