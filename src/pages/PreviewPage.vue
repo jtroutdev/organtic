@@ -81,9 +81,6 @@ const options = [
         </div>
         <div class="banner ok">
           <span>Everything moved. The original names are kept in History.</span>
-          <button class="btn" type="button" @click="go('history')">
-            Open History to undo
-          </button>
         </div>
         <div v-if="store.applied.warnings.length" class="banner bad" role="status">
           <span
@@ -109,11 +106,14 @@ const options = [
           {{ store.queue.groups.length === 1 ? "is" : "are" }} still in the queue.
         </p>
         <p v-else>The queue is empty.</p>
-        <div>
-          <button class="btn primary" type="button" @click="go('review')">
-            Back to the queue
-          </button>
-        </div>
+      </div>
+      <div class="foot">
+        <button class="btn" type="button" @click="go('history')">
+          Open History to undo
+        </button>
+        <button class="btn primary" type="button" @click="go('review')">
+          Back to the queue
+        </button>
       </div>
     </template>
 
@@ -152,19 +152,6 @@ const options = [
                   : "Existing files are never overwritten."
               }}
             </p>
-          </div>
-          <div class="row">
-            <button class="btn" type="button" @click="go('review')">
-              Back to Review
-            </button>
-            <button
-              class="btn primary"
-              type="button"
-              :disabled="preview.blocked || store.busy || !api.desktop"
-              @click="apply"
-            >
-              Apply {{ preview.counts.operations }} changes
-            </button>
           </div>
         </div>
         <div class="card">
@@ -310,6 +297,19 @@ const options = [
           is kept. Undo puts removed folders back.
         </p>
       </details>
+      <div class="foot">
+        <button class="btn" type="button" @click="go('review')">
+          Back to Review
+        </button>
+        <button
+          class="btn primary"
+          type="button"
+          :disabled="preview.blocked || store.busy || !api.desktop"
+          @click="apply"
+        >
+          Apply {{ preview.counts.operations }} changes
+        </button>
+      </div>
     </template>
   </div>
 </template>

@@ -12,22 +12,62 @@ import {
   store,
 } from "./store.ts";
 import type { Page } from "./store.ts";
+import AddPage from "./pages/AddPage.vue";
 import ReviewPage from "./pages/ReviewPage.vue";
 import PreviewPage from "./pages/PreviewPage.vue";
 import HistoryPage from "./pages/HistoryPage.vue";
 import SettingsPage from "./pages/SettingsPage.vue";
 
 const pages = {
+  add: AddPage,
   review: ReviewPage,
   preview: PreviewPage,
   history: HistoryPage,
   settings: SettingsPage,
 };
-const tabs = computed<[Page, string, number | null][]>(() => [
-  ["review", "Review", store.queue.groups.length || null],
-  ["preview", "Preview", confirmed().length || null],
-  ["history", "History", null],
-  ["settings", "Settings", null],
+const LABELS: Record<Page, string> = {
+  add: "Add files",
+  review: "Review",
+  preview: "Preview",
+  history: "History",
+  settings: "Settings",
+};
+const KEYS: Page[] = ["review", "preview", "history", "settings"];
+const tabs: Page[] = ["history", "settings"];
+const empty = computed(
+  () => !store.queue.groups.length && !store.queue.skipped.length,
+);
+// Review has nothing to show for an empty queue, so it opens on adding files.
+const view = computed<Page>(() =>
+  store.page === "review" && empty.value ? "add" : store.page,
+);
+/** Where the wizard is, from 1 (adding files) to 4 (a batch applied). */
+const at = computed(() => {
+  const page =
+    store.page === "history" || store.page === "settings" ? store.wizard : store.page;
+  if (page === "preview") return store.applied ? 4 : 3;
+  return page === "review" && !empty.value ? 2 : 1;
+});
+// A step can be opened from the stepper once the queue has what it needs.
+const steps = computed<
+  { page: Page | null; label: string; open: boolean; count: number | null; unit: string }[]
+>(() => [
+  { page: "add", label: "Add files", open: true, count: null, unit: "" },
+  {
+    page: "review",
+    label: "Review",
+    open: !empty.value,
+    count: store.queue.groups.length || null,
+    unit: " groups in the queue",
+  },
+  {
+    page: "preview",
+    label: "Preview",
+    open: confirmed().length > 0 && !store.applied,
+    count: confirmed().length || null,
+    unit: " groups confirmed",
+  },
+  { page: null, label: "Done", open: false, count: null, unit: "" },
 ]);
 const mac = navigator.platform.toLowerCase().includes("mac");
 const mod = mac ? "⌘" : "Ctrl";
@@ -74,7 +114,7 @@ function shortcut(event: KeyboardEvent) {
   const key = event.key.toLowerCase();
   let handled = true;
   if (command && ["1", "2", "3", "4"].includes(key))
-    void go(tabs.value[Number(key) - 1]![0]);
+    void go(KEYS[Number(key) - 1]!);
   else if (command && key === "o") void add(event.shiftKey);
   else if (command && key === "enter") {
     if (store.page === "review") void confirmAndNext();
@@ -99,8 +139,7 @@ onUnmounted(() => window.removeEventListener("keydown", shortcut));
 watch(
   () => store.visits,
   async () => {
-    const label = tabs.value.find(([id]) => id === store.page)![1];
-    document.title = `${label} · Organtic`;
+    document.title = `${LABELS[view.value]} · Organtic`;
     await nextTick();
     const heading = document.querySelector<HTMLElement>("main h1");
     heading?.setAttribute("tabindex", "-1");
@@ -124,34 +163,61 @@ watch(
       <div class="brand">
         Organtic<small v-if="!api.desktop">Example mode</small>
       </div>
-      <div class="row">
-        <nav class="tabs" aria-label="Main">
-          <button
-            v-for="([id, label, count], index) in tabs"
-            :key="id"
-            type="button"
-            :aria-current="store.page === id ? 'page' : undefined"
-            :aria-keyshortcuts="`Control+${index + 1}`"
-            @click="go(id)"
-          >
-            {{ label
-            }}<span v-if="count !== null"
-              >{{ count
-              }}<span class="sr-only">{{
-                id === "review" ? " groups in the queue" : " groups confirmed"
-              }}</span></span
-            >
-          </button>
-        </nav>
+      <nav class="steps" aria-label="Progress">
+        <ol>
+          <template v-for="(step, index) in steps" :key="step.label">
+            <li v-if="index" class="join" aria-hidden="true"></li>
+            <li>
+              <component
+                :is="step.open && index + 1 !== at ? 'button' : 'span'"
+                class="step"
+                :class="{ done: index + 1 < at }"
+                :type="step.open && index + 1 !== at ? 'button' : undefined"
+                :aria-current="index + 1 === at ? 'step' : undefined"
+                @click="step.open && step.page && index + 1 !== at && go(step.page)"
+              >
+                <span class="badge">
+                  <svg
+                    v-if="index + 1 < at"
+                    aria-hidden="true"
+                    viewBox="0 0 16 16"
+                    width="12"
+                    height="12"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M3.5 8.5l3 3 6-7" />
+                  </svg>
+                  <template v-else>{{ index + 1 }}</template>
+                </span>
+                <span class="sr-only">{{ index + 1 < at ? "Finished: " : "" }}</span
+                >{{ step.label
+                }}<span v-if="step.count !== null" class="n"
+                  >{{ step.count }}<span class="sr-only">{{ step.unit }}</span></span
+                >
+              </component>
+            </li>
+          </template>
+        </ol>
+      </nav>
+      <nav class="tabs" aria-label="Main">
         <button
-          class="btn quiet"
+          v-for="(id, index) in tabs"
+          :key="id"
           type="button"
-          aria-haspopup="dialog"
-          @click="help?.showModal()"
+          :aria-current="store.page === id ? 'page' : undefined"
+          :aria-keyshortcuts="`Control+${index + 3}`"
+          @click="go(id)"
         >
+          {{ LABELS[id] }}
+        </button>
+        <button type="button" aria-haspopup="dialog" @click="help?.showModal()">
           Shortcuts
         </button>
-      </div>
+      </nav>
     </header>
     <main id="content" tabindex="-1">
       <div class="notices">
@@ -168,7 +234,7 @@ watch(
           </button>
         </div>
       </div>
-      <component :is="pages[store.page]" />
+      <component :is="pages[view]" />
     </main>
   </div>
   <p class="sr-only" role="status" aria-live="polite">{{ store.notice }}</p>

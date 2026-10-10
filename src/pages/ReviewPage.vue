@@ -337,41 +337,6 @@ const search = () =>
 
 <template>
   <div class="page">
-    <template v-if="!store.queue.groups.length && !store.queue.skipped.length">
-      <div class="above">
-        <div class="head">
-          <div>
-            <h1>Review matches</h1>
-            <p>Nothing in the queue.</p>
-          </div>
-        </div>
-      </div>
-      <div class="drop">
-        <h2>Drop a folder or files here</h2>
-        <p class="muted">
-          Video files are grouped by show or film and matched for you to confirm.
-        </p>
-        <div class="row">
-          <button
-            class="btn primary"
-            type="button"
-            :disabled="store.busy"
-            @click="run(api.addFolder)"
-          >
-            Add folder
-          </button>
-          <button
-            class="btn"
-            type="button"
-            :disabled="store.busy"
-            @click="run(api.addFiles)"
-          >
-            Add files
-          </button>
-        </div>
-      </div>
-    </template>
-    <template v-else>
       <div class="above">
         <div class="head">
           <div>
@@ -392,26 +357,6 @@ const search = () =>
             </button>
             <button class="btn" type="button" :disabled="store.busy" @click="run(api.addFolder)">
               Add folder
-            </button>
-            <button class="btn quiet" type="button" :disabled="store.busy" @click="run(api.clear)">
-              Clear queue
-            </button>
-            <button
-              v-if="suggested"
-              class="btn"
-              type="button"
-              :disabled="store.busy"
-              @click="confirmAll"
-            >
-              Confirm {{ suggested }} suggested
-            </button>
-            <button
-              class="btn primary"
-              type="button"
-              :disabled="!readyFiles"
-              @click="go('preview')"
-            >
-              Preview changes
             </button>
           </div>
         </div>
@@ -484,6 +429,25 @@ const search = () =>
               {{ label }}<span>{{ countFor(id) }}</span>
             </button>
           </div>
+        </template>
+        <template v-if="store.queue.skipped.length" #foot>
+          <details>
+            <summary>
+              {{ plural(store.queue.skipped.length, "file") }} set aside as samples
+              or extras
+            </summary>
+            <div class="scroll capped skipped">
+              <div v-for="file in store.queue.skipped" :key="file.id">
+                <span class="mono">{{ file.source }}</span>
+                <span class="row between">
+                  <span class="pill off">{{ file.reason }}</span>
+                  <button class="btn" type="button" :disabled="store.busy" @click="run(() => api.include(file.id))">
+                    Include
+                  </button>
+                </span>
+              </div>
+            </div>
+          </details>
         </template>
         <template #side>
           <div v-for="item in groups" :key="item.key" class="tickrow">
@@ -868,24 +832,30 @@ const search = () =>
         <p v-else class="muted">No groups in this view.</p>
       </SplitView>
 
-      <details v-if="store.queue.skipped.length" class="card">
-        <summary>
-          {{ plural(store.queue.skipped.length, "file") }} set aside as samples
-          or extras
-        </summary>
-        <div class="scroll capped">
-          <div v-for="file in store.queue.skipped" :key="file.id" class="row between">
-            <span
-              ><span class="mono">{{ file.source }}</span>
-              <span class="pill off">{{ file.reason }}</span></span
-            >
-            <button class="btn" type="button" :disabled="store.busy" @click="run(() => api.include(file.id))">
-              Include
-            </button>
-          </div>
+      <div class="foot">
+        <button class="btn" type="button" :disabled="store.busy" @click="run(api.clear)">
+          Clear queue
+        </button>
+        <div class="row">
+          <button
+            v-if="suggested"
+            class="btn"
+            type="button"
+            :disabled="store.busy"
+            @click="confirmAll"
+          >
+            Confirm {{ suggested }} suggested
+          </button>
+          <button
+            class="btn primary"
+            type="button"
+            :disabled="!readyFiles"
+            @click="go('preview')"
+          >
+            Preview changes
+          </button>
         </div>
-      </details>
-    </template>
+      </div>
     <dialog
       ref="details"
       class="help facts"

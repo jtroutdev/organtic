@@ -35,7 +35,7 @@ This has not been confirmed with either maintainer, and no one from this project
 
 ## Fonts
 
-IBM Plex Sans, IBM Plex Mono, and Bricolage Grotesque are bundled through the `@fontsource` packages under the [SIL Open Font License 1.1](https://openfontlicense.org). Each package includes its license text.
+Red Hat Text, Red Hat Mono, and Readex Pro are bundled through the `@fontsource` packages under the [SIL Open Font License 1.1](https://openfontlicense.org). Each package includes its license text.
 
 ## Dependencies
 

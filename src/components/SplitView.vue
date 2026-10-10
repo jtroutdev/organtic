@@ -51,6 +51,7 @@ function move(event: KeyboardEvent) {
       <div ref="side" class="list" role="group" :aria-label="list" @keydown="move">
         <slot name="side" />
       </div>
+      <div class="sidefoot"><slot name="foot" /></div>
     </div>
     <section ref="pane" class="detail" tabindex="-1" :aria-label="detail">
       <slot />
