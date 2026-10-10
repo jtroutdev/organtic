@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, onUnmounted, ref, watch } from "vue";
 import type { PreviewItem } from "../../core/types.ts";
 import ListItem from "../components/ListItem.vue";
 import SplitView from "../components/SplitView.vue";
@@ -57,12 +57,40 @@ const rows = computed<Row[]>(() => {
 });
 const options = [
   ["organize", "Organise into folders", "Off renames each file where it is"],
-  ["subtitles", "Rename subtitles too", "Keeps language tags such as .en.forced"],
-  ["sidecars", "Move existing NFO files and artwork", "Those named after a video, or describing its folder"],
-  ["nfo", "Write NFO metadata files", "Read by Kodi and Jellyfin, ignored by Plex"],
-  ["removeEmpty", "Remove emptied folders", "Only folders left with nothing in them"],
-  ["artwork", "Download posters and backdrops", "Saved in each title's folder; needs organising into folders"],
+  ["subtitles", "Rename subtitles", "Keeps language tags such as .en.forced"],
+  ["sidecars", "Move NFO and artwork", "Those named after a video, or describing its folder"],
+  ["nfo", "Write NFO files", "Read by Kodi and Jellyfin, ignored by Plex"],
+  ["removeEmpty", "Remove empty folders", "Only folders left with nothing in them"],
+  ["artwork", "Download artwork", "Posters and backdrops, saved in each title's folder; needs organising into folders"],
 ] as const;
+const optionsOn = computed(
+  () => options.filter(([key]) => store.settings[key]).length,
+);
+// The menu stays open while options are ticked. Escape, a click outside it or its button closes it.
+const menu = ref<HTMLElement>();
+const menuOpen = ref(false);
+function closeMenu(refocus: boolean) {
+  menuOpen.value = false;
+  if (refocus) menu.value?.querySelector("button")?.focus();
+}
+const outside = (event: PointerEvent) => {
+  if (!menu.value?.contains(event.target as Node)) closeMenu(false);
+};
+const escape = (event: KeyboardEvent) => {
+  if (event.key === "Escape") closeMenu(true);
+};
+function listen(on: boolean) {
+  const change = on ? document.addEventListener : document.removeEventListener;
+  change.call(document, "pointerdown", outside as EventListener);
+  change.call(document, "keydown", escape as EventListener);
+}
+watch(menuOpen, listen);
+onUnmounted(() => listen(false));
+async function toggle(key: (typeof options)[number][0], box: HTMLInputElement) {
+  // A change made while another is being saved is put back, so the tick never disagrees with the setting.
+  if (store.busy || !(await saveSettings({ [key]: box.checked })))
+    box.checked = store.settings[key];
+}
 </script>
 
 <template>
@@ -128,12 +156,12 @@ const options = [
       </div>
       <div class="card">
         <p>
-          Confirm at least one group in Review that has a matched file to see its
+          Confirm at least one group in Matching that has a matched file to see its
           new names here.
         </p>
         <div>
           <button class="btn primary" type="button" @click="go('review')">
-            Go to Review
+            Go to Matching
           </button>
         </div>
       </div>
@@ -154,7 +182,7 @@ const options = [
             </p>
           </div>
         </div>
-        <div class="card">
+        <div class="card bar">
           <div class="stats">
             <span><b>{{ preview.counts.videos }}</b>{{ preview.counts.videos === 1 ? "video" : "videos" }} moved</span>
             <span><b>{{ preview.counts.subtitles }}</b>subtitles</span>
@@ -165,22 +193,41 @@ const options = [
             <span v-if="preview.counts.metadata"><b>{{ preview.counts.metadata }}</b>metadata files</span>
             <span v-if="preview.counts.left"><b>{{ preview.counts.left }}</b>left where {{ preview.counts.left === 1 ? "it is" : "they are" }}</span>
           </div>
-          <div class="opts">
-            <label v-for="[key, label, note] in options" :key="key" class="check">
-              <input
-                type="checkbox"
-                :checked="store.settings[key]"
-                :disabled="store.busy"
-                @change="saveSettings({ [key]: ($event.target as HTMLInputElement).checked })"
-              />
-              <span>{{ label }}<small>{{ note }}</small></span>
-            </label>
+          <div ref="menu" class="menu">
+            <button
+              class="btn"
+              type="button"
+              aria-haspopup="true"
+              aria-controls="preview-options"
+              :aria-expanded="menuOpen"
+              @click="menuOpen = !menuOpen"
+            >
+              Options<span class="n"
+                >{{ optionsOn }}<span class="sr-only"> turned on</span></span
+              >
+            </button>
+            <div
+              v-if="menuOpen"
+              id="preview-options"
+              class="pop"
+              role="group"
+              aria-label="Options"
+            >
+              <label v-for="[key, label, note] in options" :key="key" class="opt" :title="note">
+                <input
+                  type="checkbox"
+                  :checked="store.settings[key]"
+                  @change="toggle(key, $event.target as HTMLInputElement)"
+                />
+                {{ label }}<span class="sr-only">. {{ note }}</span>
+              </label>
+            </div>
           </div>
         </div>
         <div v-if="clashes" class="banner bad">
           <span
             ><b>{{ plural(clashes, "file") }} cannot be renamed as planned.</b>
-            Leave the affected files out, or change the match in Review.</span
+            Leave the affected files out, or change the match in Matching.</span
           >
         </div>
         <div v-for="error in preview.errors" :key="error" class="banner bad">
@@ -299,7 +346,7 @@ const options = [
       </details>
       <div class="foot">
         <button class="btn" type="button" @click="go('review')">
-          Back to Review
+          Back to Matching
         </button>
         <button
           class="btn primary"

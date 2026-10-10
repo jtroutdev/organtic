@@ -479,75 +479,112 @@ const search = () =>
           </div>
         </template>
 
-        <form
-          v-if="ticked.length"
-          class="row numbers movebar"
-          aria-label="Merge or remove the selected groups"
-          @submit.prevent="mergeTicked"
-          @keydown.esc="untick"
-        >
-          <strong>{{ plural(ticked.length, "group") }} selected</strong>
-          <template v-if="ticked.length > 1">
-            <label
-              >Merge into
-              <select v-model="mergeInto" class="input wide">
-                <option v-for="item in ticked" :key="item.key" :value="item.key">
-                  {{ nameOf(item) }}
-                </option>
-              </select></label
-            >
-            <button class="btn primary" type="submit" :disabled="store.busy">Merge</button>
-          </template>
-          <button class="btn" type="button" :disabled="store.busy" @click="removeTicked">
-            Remove from queue
-          </button>
-          <button class="btn quiet" type="button" @click="untick">Clear selection</button>
-        </form>
-
         <template v-if="group">
-          <div class="summary">
-            <div>
-              <span class="kind">{{ group.kind === "tv" ? "TV" : "FILM" }}</span>
-              <h2 class="title">
-                {{ " " + (match?.title ?? (group.parsedTitle || "Unnamed")) }}
-                <span v-if="match" class="muted">({{ match.year ?? "year unknown" }})</span>
-              </h2>
-            </div>
-            <p :class="{ clip: !attention }" :title="attention ? undefined : why">
-              {{ why }}
-            </p>
-            <span class="pill" :class="STATUS[group.status][0]">{{
-              STATUS[group.status][1]
-            }}</span>
-          </div>
-          <div class="cands">
-            <form class="row" @submit.prevent="search">
-              <input
-                id="search-title"
-                v-model="query"
-                class="input"
-                aria-label="Search title"
-                required
-                maxlength="200"
-                style="flex: 1 1 180px; width: auto"
-              />
-              <div class="seg" role="group" aria-label="Type">
-                <button type="button" :aria-pressed="kind === 'movie'" @click="kind = 'movie'">
-                  Film
-                </button>
-                <button type="button" :aria-pressed="kind === 'tv'" @click="kind = 'tv'">
-                  TV
+          <!-- Finding the match: search and the group's actions, then the results to pick from. -->
+          <div class="band">
+            <form
+              v-if="ticked.length"
+              class="row numbers movebar"
+              aria-label="Merge or remove the selected groups"
+              @submit.prevent="mergeTicked"
+              @keydown.esc="untick"
+            >
+              <strong>{{ plural(ticked.length, "group") }} selected</strong>
+              <template v-if="ticked.length > 1">
+                <label
+                  >Merge into
+                  <select v-model="mergeInto" class="input wide">
+                    <option v-for="item in ticked" :key="item.key" :value="item.key">
+                      {{ nameOf(item) }}
+                    </option>
+                  </select></label
+                >
+                <button class="btn primary" type="submit" :disabled="store.busy">Merge</button>
+              </template>
+              <button class="btn" type="button" :disabled="store.busy" @click="removeTicked">
+                Remove from queue
+              </button>
+              <button class="btn quiet" type="button" @click="untick">Clear selection</button>
+            </form>
+            <div class="row between">
+                <form class="row" @submit.prevent="search">
+                  <input
+                    id="search-title"
+                    v-model="query"
+                    class="input"
+                    aria-label="Search title"
+                    required
+                    maxlength="200"
+                    style="flex: 0 1 220px; width: 220px"
+                  />
+                  <div class="seg" role="group" aria-label="Type">
+                    <button type="button" :aria-pressed="kind === 'movie'" @click="kind = 'movie'">
+                      Film
+                    </button>
+                    <button type="button" :aria-pressed="kind === 'tv'" @click="kind = 'tv'">
+                      TV
+                    </button>
+                    <button
+                      type="button"
+                      :aria-pressed="kind === 'anime'"
+                      :title="`Also searches Kitsu, as a ${group.kind === 'tv' ? 'show' : 'film'}`"
+                      @click="kind = 'anime'"
+                    >
+                      Anime
+                    </button>
+                  </div>
+                  <button class="btn" type="submit" :disabled="busy">Search</button>
+                </form>
+              <div class="row">
+                <button
+                  v-if="others.length && !merging"
+                  class="btn quiet"
+                  type="button"
+                  aria-label="Merge group into another"
+                  :disabled="store.busy"
+                  @click="startMerge"
+                >
+                  Merge group
                 </button>
                 <button
+                  class="btn quiet"
                   type="button"
-                  :aria-pressed="kind === 'anime'"
-                  :title="`Also searches Kitsu, as a ${group.kind === 'tv' ? 'show' : 'film'}`"
-                  @click="kind = 'anime'"
+                  aria-label="Remove from queue"
+                  :disabled="store.busy"
+                  @click="remove"
                 >
-                  Anime
+                  Remove
+                </button>
+                <button
+                  v-if="group.status !== 'confirmed' && match"
+                  class="btn primary"
+                  type="button"
+                  :disabled="busy"
+                  @click="confirmAndNext"
+                >
+                  Confirm and next
+                </button>
+                <button v-else class="btn" type="button" @click="selectNext(group.key)">
+                  Next group
                 </button>
               </div>
-              <button class="btn" type="submit" :disabled="busy">Search</button>
+            </div>
+            <form
+              v-if="merging"
+              class="row numbers"
+              @submit.prevent="move(true)"
+              @keydown.esc="merging = false"
+            >
+              <label
+                >Merge all {{ plural(group.files.length, "file") }} into
+                <select v-focus v-model="mergeTo" class="input wide">
+                  <option v-for="item in others" :key="item.key" :value="item.key">
+                    {{ nameOf(item) }}
+                  </option>
+                </select></label
+              >
+              <button class="btn primary" type="submit" :disabled="busy">Merge</button>
+              <button class="btn quiet" type="button" @click="merging = false">Cancel</button>
             </form>
             <div v-if="group.numberingChoice" class="row numbers">
               <span class="muted" style="font-size: 12.5px; font-weight: 500"
@@ -615,61 +652,76 @@ const search = () =>
                 Keep these numbers in the new names
               </label>
             </div>
-          </div>
-          <div>
-            <div class="strip" role="group" aria-label="Matches">
-              <div
-                v-for="(candidate, index) in group.candidates"
-                :key="idOf(candidate)"
-                class="cand"
-                :class="{ on: group.chosen === index }"
-              >
-                <img
-                  v-if="candidate.posterUrl && !broken.includes(idOf(candidate))"
-                  class="poster"
-                  :src="thumb(candidate.posterUrl)"
-                  alt=""
-                  loading="lazy"
-                  referrerpolicy="no-referrer"
-                  @error="posterFailed($event, candidate)"
-                />
-                <span v-else class="poster" aria-hidden="true">{{
-                  candidate.kind === "tv" ? "TV" : "FILM"
-                }}</span>
-                <strong :title="candidate.title"
-                  >{{ candidate.title }}
-                  <span class="muted">({{ candidate.year ?? "year unknown" }})</span></strong
+            <div>
+              <div class="strip" role="group" aria-label="Matches">
+                <div
+                  v-for="(candidate, index) in group.candidates"
+                  :key="idOf(candidate)"
+                  class="cand"
+                  :class="{ on: group.chosen === index }"
                 >
-                <span class="fit" :class="{ low: candidate.weak }">
-                  {{ candidate.fit }} ·
-                  {{ SOURCES[candidate.provider] }}
-                </span>
-                <span class="row">
-                  <span v-if="group.chosen === index" class="label">{{
-                    group.status === "confirmed" ? "Chosen" : "Suggested"
+                  <img
+                    v-if="candidate.posterUrl && !broken.includes(idOf(candidate))"
+                    class="poster"
+                    :src="thumb(candidate.posterUrl)"
+                    alt=""
+                    loading="lazy"
+                    referrerpolicy="no-referrer"
+                    @error="posterFailed($event, candidate)"
+                  />
+                  <span v-else class="poster" aria-hidden="true">{{
+                    candidate.kind === "tv" ? "TV" : "FILM"
                   }}</span>
-                  <button
-                    v-else
-                    class="btn"
-                    type="button"
-                    :disabled="busy"
-                    :aria-label="`Use this: ${candidate.title} (${candidate.year ?? 'year unknown'})`"
-                    @click="run(() => api.choose(group!.key, index))"
+                  <strong :title="candidate.title"
+                    >{{ candidate.title }}
+                    <span class="muted">({{ candidate.year ?? "year unknown" }})</span></strong
                   >
-                    Use this
-                  </button>
-                  <button
-                    class="btn"
-                    type="button"
-                    aria-haspopup="dialog"
-                    :aria-label="`Details of ${candidate.title} (${candidate.year ?? 'year unknown'})`"
-                    @click="showDetails(idOf(candidate))"
-                  >
-                    Details
-                  </button>
-                </span>
+                  <span class="fit" :class="{ low: candidate.weak }">
+                    {{ candidate.fit }} ·
+                    {{ SOURCES[candidate.provider] }}
+                  </span>
+                  <span class="row">
+                    <span v-if="group.chosen === index" class="label">{{
+                      group.status === "confirmed" ? "Chosen" : "Suggested"
+                    }}</span>
+                    <button
+                      v-else
+                      class="btn"
+                      type="button"
+                      :disabled="busy"
+                      :aria-label="`Use this: ${candidate.title} (${candidate.year ?? 'year unknown'})`"
+                      @click="run(() => api.choose(group!.key, index))"
+                    >
+                      Use this
+                    </button>
+                    <button
+                      class="btn"
+                      type="button"
+                      aria-haspopup="dialog"
+                      :aria-label="`Details of ${candidate.title} (${candidate.year ?? 'year unknown'})`"
+                      @click="showDetails(idOf(candidate))"
+                    >
+                      Details
+                    </button>
+                  </span>
+                </div>
               </div>
             </div>
+          </div>
+          <div class="summary">
+            <div>
+              <span class="kind">{{ group.kind === "tv" ? "TV" : "FILM" }}</span>
+              <h2 class="title">
+                {{ " " + (match?.title ?? (group.parsedTitle || "Unnamed")) }}
+                <span v-if="match" class="muted">({{ match.year ?? "year unknown" }})</span>
+              </h2>
+            </div>
+            <p :class="{ clip: !attention }" :title="attention ? undefined : why">
+              {{ why }}
+            </p>
+            <span class="pill" :class="STATUS[group.status][0]">{{
+              STATUS[group.status][1]
+            }}</span>
           </div>
           <div class="fill">
             <div>
@@ -785,49 +837,6 @@ const search = () =>
             </div>
           </div>
 
-          <div class="row">
-            <button
-              v-if="group.status !== 'confirmed' && match"
-              class="btn primary"
-              type="button"
-              :disabled="busy"
-              @click="confirmAndNext"
-            >
-              Confirm and next
-            </button>
-            <button v-else class="btn" type="button" @click="selectNext(group.key)">
-              Next group
-            </button>
-            <button
-              v-if="others.length && !merging"
-              class="btn quiet"
-              type="button"
-              :disabled="store.busy"
-              @click="startMerge"
-            >
-              Merge into another group
-            </button>
-            <button class="btn quiet" type="button" :disabled="store.busy" @click="remove">
-              Remove from queue
-            </button>
-          </div>
-          <form
-            v-if="merging"
-            class="row numbers"
-            @submit.prevent="move(true)"
-            @keydown.esc="merging = false"
-          >
-            <label
-              >Merge all {{ plural(group.files.length, "file") }} into
-              <select v-focus v-model="mergeTo" class="input wide">
-                <option v-for="item in others" :key="item.key" :value="item.key">
-                  {{ nameOf(item) }}
-                </option>
-              </select></label
-            >
-            <button class="btn primary" type="submit" :disabled="busy">Merge</button>
-            <button class="btn quiet" type="button" @click="merging = false">Cancel</button>
-          </form>
         </template>
         <p v-else class="muted">No groups in this view.</p>
       </SplitView>

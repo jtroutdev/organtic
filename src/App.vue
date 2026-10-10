@@ -27,7 +27,7 @@ const pages = {
 };
 const LABELS: Record<Page, string> = {
   add: "Add files",
-  review: "Review",
+  review: "Matching",
   preview: "Preview",
   history: "History",
   settings: "Settings",
@@ -37,7 +37,7 @@ const tabs: Page[] = ["history", "settings"];
 const empty = computed(
   () => !store.queue.groups.length && !store.queue.skipped.length,
 );
-// Review has nothing to show for an empty queue, so it opens on adding files.
+// Matching has nothing to show for an empty queue, so it opens on adding files.
 const view = computed<Page>(() =>
   store.page === "review" && empty.value ? "add" : store.page,
 );
@@ -55,7 +55,7 @@ const steps = computed<
   { page: "add", label: "Add files", open: true, count: null, unit: "" },
   {
     page: "review",
-    label: "Review",
+    label: "Matching",
     open: !empty.value,
     count: store.queue.groups.length || null,
     unit: " groups in the queue",
@@ -72,11 +72,11 @@ const steps = computed<
 const mac = navigator.platform.toLowerCase().includes("mac");
 const mod = mac ? "⌘" : "Ctrl";
 const SHORTCUTS: [keys: string[], action: string][] = [
-  [[`${mod}+1`, "…", `${mod}+4`], "Open Review, Preview, History or Settings"],
+  [[`${mod}+1`, "…", `${mod}+4`], "Open Matching, Preview, History or Settings"],
   [["↑", "↓"], "Move through a list when it has focus"],
   [["Alt+↑", "Alt+↓"], "Previous or next item in the list, from anywhere"],
-  [[`${mod}+Enter`], "Confirm and next on Review; Apply on Preview"],
-  [["/"], "Jump to the title search on Review"],
+  [[`${mod}+Enter`], "Confirm and next on Matching; Apply on Preview"],
+  [["/"], "Jump to the title search on Matching"],
   [[`${mod}+O`], "Add files"],
   [[`${mod}+Shift+O`], "Add folder"],
   [["Esc"], "Close an open form or clear the file selection"],
