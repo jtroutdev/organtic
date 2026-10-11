@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Providers, sourcePage } from "../core/providers.ts";
+import { Providers, TvdbKeyRefused, sourcePage } from "../core/providers.ts";
 import type { SearchInput } from "../core/providers.ts";
 import type { Candidate, ResolveResult } from "../core/types.ts";
 test("TVmaze search normalizes data, caches responses, and resolves an episode", async () => {
@@ -569,4 +569,21 @@ test("only a source's own secure page may be opened", () => {
     42,
   ])
     assert.equal(sourcePage(address), undefined);
+});
+
+test("a key TVDB turns down is told apart from a failure to reach it", async () => {
+  const refused = new Providers({ fetcher: async () => Response.json({ status: "failure" }, { status: 401 }) });
+  refused.setTvdbKey("wrong", "");
+  await assert.rejects(refused.checkTvdbKey(), TvdbKeyRefused);
+
+  for (const fetcher of [
+    async () => {
+      throw new TypeError("fetch failed");
+    },
+    async () => Response.json({}, { status: 503 }),
+  ]) {
+    const unreachable = new Providers({ fetcher });
+    unreachable.setTvdbKey("fine", "");
+    await assert.rejects(unreachable.checkTvdbKey(), (error) => !(error instanceof TvdbKeyRefused));
+  }
 });

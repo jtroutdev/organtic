@@ -303,7 +303,7 @@ export const demoApi: MediaApi = {
   },
   async setTvdbKey(key) {
     sources = { ...sources, tvdb: key.trim() ? "session" : "none" };
-    return sources;
+    return { sources };
   },
   async openReference() {},
   async openSourcePage() {},
