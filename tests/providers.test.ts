@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Providers } from "../core/providers.ts";
+import { Providers, sourcePage } from "../core/providers.ts";
 import type { SearchInput } from "../core/providers.ts";
 import type { Candidate, ResolveResult } from "../core/types.ts";
 test("TVmaze search normalizes data, caches responses, and resolves an episode", async () => {
@@ -474,7 +474,7 @@ const kitsu = (calls: string[] = []) =>
               synopsis: "An elf mage.",
               startDate: "2023-09-29",
               subtype: "TV",
-              posterImage: { original: "https://media.kitsu.app/anime/46474/poster.jpg" },
+              posterImage: { original: "https://media.kitsu.app/anime/46474/poster.jpg", small: "https://media.kitsu.app/anime/46474/small.jpg" },
               coverImage: { original: "http://insecure.example/cover.jpg" },
             },
             relationships: { mappings: { data: [{ id: "1" }, { id: "2" }] } },
@@ -507,6 +507,10 @@ test("Kitsu supplies anime entries, their episodes and what else they are called
   assert.deepEqual(
     [frieren!.provider, frieren!.id, frieren!.posterUrl, frieren!.backdropUrl, frieren!.sourceUrl],
     ["kitsu", 46474, "https://media.kitsu.app/anime/46474/poster.jpg", undefined, "https://kitsu.app/anime/sousou-no-frieren"],
+  );
+  assert.deepEqual(
+    [frieren!.posterThumbUrl, titan!.posterThumbUrl],
+    ["https://media.kitsu.app/anime/46474/small.jpg", undefined],
   );
   const japanese = await providers.search({ provider: "kitsu", kind: "tv", query: "sousou no frieren", language: "ja-JP" });
   assert.equal(japanese[0]!.title, "葬送のフリーレン");
@@ -544,4 +548,25 @@ test("Kitsu supplies anime entries, their episodes and what else they are called
   // Only an exact title counts; a near miss must not rename someone's files after another show.
   assert.deepEqual(await providers.alternativeTitles("tv", "Sousou no"), []);
   assert.deepEqual(await providers.alternativeTitles("tv", "nothing"), []);
+});
+
+test("only a source's own secure page may be opened", () => {
+  for (const address of [
+    "https://www.themoviedb.org/movie/329865",
+    "https://www.tvmaze.com/shows/44933/severance",
+    "https://kitsu.app/anime/sousou-no-frieren",
+  ])
+    assert.equal(sourcePage(address), address);
+  for (const address of [
+    "http://www.themoviedb.org/movie/329865",
+    "https://www.themoviedb.org.example.com/movie/1",
+    "https://user@kitsu.app/anime/x",
+    "https://kitsu.app:8443/anime/x",
+    "file:///etc/passwd",
+    "javascript:alert(1)",
+    "not an address",
+    undefined,
+    42,
+  ])
+    assert.equal(sourcePage(address), undefined);
 });

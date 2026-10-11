@@ -345,7 +345,7 @@ Wizard steps (Add files, Review, Preview, Done) end in a footer: the destructive
 
 ## Elevation & Depth
 
-The app is flat. Depth is a step of surface colour and a 1px edge. There is one shadow, under a pop-up. A dialog sits on the scrim with the stronger outline and no shadow. Layers are named: sticky column headings, then overlays, then the skip link.
+The app is flat. Depth is a step of surface colour and a 1px edge. There is one shadow, under a pop-up or a tooltip. A dialog sits on the scrim with the stronger outline and no shadow. Layers are named: sticky column headings, then overlays, then the skip link.
 
 ## Shapes
 
@@ -384,6 +384,8 @@ Two selection idioms, never mixed: the **accent tint with a 1px accent edge** ma
 
 **File row.** Before and after side by side in mono. The problem being worked on is tinted warning soft from edge to edge.
 
+**Tooltip.** A short note about a control, on surface raised with the stronger outline and the overlay shadow, in `body-sm`. It shows for the pointer after a pause and for keyboard focus at once, and Escape dismisses it. Never use the `title` attribute: it is out of reach of the keyboard. A tooltip on cut-off text shows only while the text is cut off.
+
 **Pop-up and dialog.** A pop-up is a list of 32px option rows under the button that opened it. A dialog is for secondary information a person asked for, such as match details.
 
 ## Do's and Don'ts
@@ -397,6 +399,7 @@ Two selection idioms, never mixed: the **accent tint with a 1px accent edge** ma
 - Don't mark the selected item with a stripe on its left edge.
 - Don't style an action as a link. Links are only for things that open a web page.
 - Don't use arrow characters in the interface.
+- Don't use the `title` attribute for a tooltip.
 - Don't put a dot or an icon inside a pill.
 - Don't dim, shift or flash the screen while something loads.
 - Don't use outline subtle as the only edge of something a person acts on.

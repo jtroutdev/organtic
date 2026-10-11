@@ -8,6 +8,7 @@ import type {
 import ListItem from "../components/ListItem.vue";
 import SplitView from "../components/SplitView.vue";
 import { focusOn, vFocus } from "../focus.ts";
+import { vTip } from "../tip.ts";
 import {
   STATUS,
   announce,
@@ -113,10 +114,12 @@ async function useDetailed() {
   if (index >= 0) await run(() => api.choose(group.value!.key, index));
   await focusOn(".detail");
 }
-// Posters are shown small; TMDB and TVmaze serve a reduced size at a predictable address.
-const thumb = (url: string) =>
-  url
-    .replace("/t/p/original/", "/t/p/w154/")
+// Posters are shown small. TMDB and TVmaze serve a reduced size at a predictable address;
+// a provider that does not, names its own.
+const thumb = (item: { posterUrl?: string; posterThumbUrl?: string }) =>
+  item.posterThumbUrl ??
+  item.posterUrl
+    ?.replace("/t/p/original/", "/t/p/w154/")
     .replace("/original_untouched/", "/medium_portrait/");
 const broken = ref<string[]>([]);
 function posterFailed(event: Event, candidate: { provider: string; id: unknown; posterUrl?: string }) {
@@ -622,7 +625,7 @@ const search = () =>
                     <button
                       type="button"
                       :aria-pressed="kind === 'anime'"
-                      :title="`Also searches Kitsu, as a ${group.kind === 'tv' ? 'show' : 'film'}`"
+                      v-tip="`Also searches Kitsu, as a ${group.kind === 'tv' ? 'show' : 'film'}`"
                       @click="kind = 'anime'"
                     >
                       Anime
@@ -690,7 +693,7 @@ const search = () =>
                     type="button"
                     :aria-pressed="group.numbering === 'tvdb'"
                     :disabled="busy"
-                    title="Places more specials; needs the show set to TVDB ordering in Plex"
+                    v-tip="'Places more specials; needs the show set to TVDB ordering in Plex'"
                     @click="setNumbering('tvdb')"
                   >
                     TVDB
@@ -707,7 +710,7 @@ const search = () =>
                   <img
                     v-if="candidate.posterUrl && !broken.includes(idOf(candidate))"
                     class="poster"
-                    :src="thumb(candidate.posterUrl)"
+                    :src="thumb(candidate)"
                     alt=""
                     loading="lazy"
                     referrerpolicy="no-referrer"
@@ -716,7 +719,7 @@ const search = () =>
                   <span v-else class="poster" aria-hidden="true">{{
                     candidate.kind === "tv" ? "TV" : "FILM"
                   }}</span>
-                  <strong :title="candidate.title"
+                  <strong v-tip.clipped="candidate.title"
                     >{{ candidate.title }}
                     <span class="muted">({{ candidate.year ?? "year unknown" }})</span></strong
                   >
@@ -832,7 +835,7 @@ const search = () =>
                     v-if="group.kind === 'tv'"
                     class="ep"
                     type="button"
-                    title="Change season or episode"
+                    v-tip="'Change season or episode'"
                     :aria-label="`${file.label}: change season or episode for ${file.source}`"
                     :aria-expanded="editing === file.id"
                     @click="edit(file)"
@@ -841,7 +844,7 @@ const search = () =>
                   </button>
                   <span v-else class="ep">{{ file.label }}</span>
                 </span>
-                <span class="path muted" :title="file.path"
+                <span v-tip="file.path" class="path muted"
                   ><span class="dir">{{ split(file.source)[0] }}</span
                   ><span class="base">{{ split(file.source)[1] }}</span></span
                 >
@@ -852,7 +855,7 @@ const search = () =>
                   </button></span
                 >
                 <span v-else-if="file.issue" class="issue">{{ file.issue }}</span>
-                <span v-else-if="file.target" class="path" :title="file.target"
+                <span v-else-if="file.target" v-tip="file.target" class="path"
                   ><span class="dir muted">{{ split(file.target)[0] }}</span
                   ><span class="base">{{ split(file.target)[1] }}</span></span
                 >
@@ -891,7 +894,7 @@ const search = () =>
                     <button
                       class="btn"
                       type="button"
-                      title="Leave this file out of the batch"
+                      v-tip="'Leave this file out of the batch'"
                       :disabled="busy"
                       @click="leaveOut(file.id)"
                     >
@@ -962,7 +965,7 @@ const search = () =>
           <img
             v-if="detail.posterUrl && !broken.includes(idOf(detail))"
             class="poster"
-            :src="thumb(detail.posterUrl)"
+            :src="thumb(detail)"
             alt=""
             referrerpolicy="no-referrer"
             @error="posterFailed($event, detail)"
@@ -978,7 +981,12 @@ const search = () =>
         <dl>
           <template v-for="[name, value] in facts" :key="name">
             <dt class="label">{{ name }}</dt>
-            <dd :class="{ mono: name === 'Page' || name.endsWith('ID') }">{{ value }}</dd>
+            <dd v-if="name === 'Page'">
+              <button class="link" type="button" @click="api.openSourcePage(String(value))">
+                {{ String(value).replace(/^https:\/\/(www\.)?/, "") }}
+              </button>
+            </dd>
+            <dd v-else :class="{ mono: name.endsWith('ID') }">{{ value }}</dd>
           </template>
         </dl>
         <form class="row" method="dialog">

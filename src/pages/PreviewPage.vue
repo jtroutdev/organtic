@@ -216,7 +216,7 @@ async function toggle(key: (typeof options)[number][0], box: HTMLInputElement) {
               role="group"
               aria-label="Options"
             >
-              <label v-for="[key, label, note] in options" :key="key" class="opt" :title="note">
+              <label v-for="[key, label, note] in options" :key="key" v-tip="note" class="opt">
                 <input
                   type="checkbox"
                   :checked="store.settings[key]"

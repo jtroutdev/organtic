@@ -64,7 +64,7 @@ interface KitsuAnime {
     synopsis?: string | null;
     startDate?: string | null;
     subtype?: string;
-    posterImage?: { original?: string | null } | null;
+    posterImage?: { original?: string | null; small?: string | null } | null;
     coverImage?: { original?: string | null } | null;
   };
   relationships?: { mappings?: { data?: { id: string }[] } };
@@ -96,6 +96,16 @@ interface TvmazeImage {
   resolutions?: { original?: { url?: string } };
 }
 // TMDB returns a path such as "/abc123.jpg"; anything else is not used.
+/** The sites a match's own page may be on. Nothing else is handed to the browser. */
+const SOURCE_HOSTS = new Set(["www.themoviedb.org", "www.tvmaze.com", "kitsu.app", "kitsu.io"]);
+/** The address to open for a match's page, or undefined when it is not one of the sources'. */
+export function sourcePage(address: unknown): string | undefined {
+  if (typeof address !== "string" || !URL.canParse(address)) return undefined;
+  const url = new URL(address);
+  if (url.protocol !== "https:" || url.username || url.password || url.port) return undefined;
+  return SOURCE_HOSTS.has(url.hostname) ? url.href : undefined;
+}
+
 const tmdbImage = (value?: string | null) =>
   value && /^\/[\w.-]+$/.test(value)
     ? `https://image.tmdb.org/t/p/original${value}`
@@ -626,8 +636,9 @@ export class Providers {
   ): Candidate {
     const attributes = item.attributes ?? {};
     const [series, season] = /^(\d+)(?:\/(\d+))?$/.exec(tvdb ?? "")?.slice(1) ?? [];
-    const image = (value?: { original?: string | null } | null) =>
-      value?.original?.startsWith("https://") ? value.original : undefined;
+    const secure = (value?: string | null) =>
+      value?.startsWith("https://") ? value : undefined;
+    const image = (value?: { original?: string | null } | null) => secure(value?.original);
     return {
       provider: "kitsu",
       kind,
@@ -643,6 +654,7 @@ export class Providers {
         ? `https://kitsu.app/anime/${attributes.slug}`
         : undefined,
       posterUrl: image(attributes.posterImage),
+      posterThumbUrl: secure(attributes.posterImage?.small),
       backdropUrl: image(attributes.coverImage),
       tvdbId: series ? Number(series) : undefined,
       tvdbSeason: season ? Number(season) : undefined,

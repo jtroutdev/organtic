@@ -85,7 +85,8 @@ async function undo(id: string) {
             class="mono oprow"
           >
             <template v-if="op.type === 'move' || op.type === 'rename'"
-              ><span class="muted">{{ op.source }}</span> → {{ op.target }}</template
+              ><span class="muted">{{ op.source }}</span
+              ><span><span class="sr-only">became </span>{{ op.target }}</span></template
             >
             <template v-else
               ><span class="muted">{{
@@ -96,8 +97,8 @@ async function undo(id: string) {
                     : op.type === "download"
                       ? "downloaded artwork"
                       : "new metadata file"
-              }}</span>
-              {{ op.target }}</template
+              }}</span
+              ><span>{{ op.target }}</span></template
             >
           </div>
           <p v-if="batch.operations.length > LIMIT" class="muted more">

@@ -12,7 +12,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { VIDEO_EXTENSIONS } from "../core/media.ts";
 import { AnimeMap } from "../core/animeMap.ts";
-import { Providers } from "../core/providers.ts";
+import { Providers, sourcePage } from "../core/providers.ts";
 import {
   scanPaths,
   createPlan,
@@ -329,6 +329,11 @@ async function start() {
   register("openReference", async (key) => {
     const url = Object.hasOwn(REFERENCES, key) ? REFERENCES[key] : undefined;
     if (!url) throw new Error("Unknown reference.");
+    await shell.openExternal(url);
+  });
+  register("openSourcePage", async (address) => {
+    const url = sourcePage(address);
+    if (!url) throw new Error("That page cannot be opened.");
     await shell.openExternal(url);
   });
 
