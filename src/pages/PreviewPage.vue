@@ -18,6 +18,10 @@ const group = computed(() => {
     groups[0]
   );
 });
+// The destination is named once: beside its Change button when it can be changed.
+const shownAbove = computed(
+  () => store.settings.organize && preview.value?.destination === store.queue.destination,
+);
 const clashes = computed(
   () =>
     preview.value?.groups.flatMap((item) => item.items).filter((item) => item.problem)
@@ -251,22 +255,40 @@ async function toggle(key: (typeof options)[number][0], box: HTMLInputElement) {
           </ListItem>
         </template>
         <div class="row between">
-          <div>
+          <div class="row grouphead">
             <span class="kind">{{ group.kind === "tv" ? "TV" : "FILM" }}</span>
             <h2 class="title">
-              {{ " " + group.title }}
+              {{ group.title }}
               <span class="muted">({{ group.year ?? "year unknown" }})</span></h2
             >
+            <span class="pill" :class="hasProblem(group.key) ? 'bad' : 'ok'">{{
+              hasProblem(group.key) ? "Needs attention" : "Ready"
+            }}</span>
           </div>
-          <span class="pill" :class="hasProblem(group.key) ? 'bad' : 'ok'">{{
-            hasProblem(group.key) ? "Needs attention" : "Ready"
-          }}</span>
+          <div v-if="store.settings.organize" class="dest">
+            <span class="label">Organise inside</span>
+            <span class="mono">{{ store.queue.destination }}</span>
+            <button
+              v-if="store.queue.destinationChanged"
+              class="btn"
+              type="button"
+              :disabled="store.busy"
+              @click="run(api.resetDestination)"
+            >
+              Use the added folder
+            </button>
+            <button class="btn" type="button" :disabled="store.busy" @click="run(api.chooseDestination)">
+              Change
+            </button>
+          </div>
         </div>
         <p v-for="problem in group.problems" :key="problem" class="issue bad">
           {{ problem }}
         </p>
         <div class="fill">
-          <h3 class="label">Inside {{ preview.destination }}</h3>
+          <h3 class="label">
+            {{ shownAbove ? "New location" : `Inside ${preview.destination}` }}
+          </h3>
           <div class="tree scroll" role="list">
             <span v-if="!rows.length" class="muted"
               >Nothing from this group will change.</span

@@ -209,6 +209,7 @@ export class Session {
     return {
       id: file.id,
       source: relativeTo(file.path, file.root),
+      path: file.path,
       label,
       target,
       issue,
