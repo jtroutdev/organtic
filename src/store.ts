@@ -69,6 +69,10 @@ export const plural = (count: number, word: string) =>
   `${count} ${word}${count === 1 ? "" : "s"}`;
 export const confirmed = () =>
   store.queue.groups.filter((group) => group.status === "confirmed");
+/** Groups still waiting on the user. Preview opens once every group is confirmed or removed. */
+export const unconfirmed = () =>
+  store.queue.groups.filter((group) => group.status !== "confirmed").length;
+export const canPreview = () => confirmed().length > 0 && !unconfirmed();
 export const filtered = (): QueueGroup[] =>
   store.queue.groups.filter((group) =>
     store.filter === "todo"

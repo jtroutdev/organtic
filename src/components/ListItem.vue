@@ -6,6 +6,8 @@ defineProps<{
   count?: number | string;
   /** What `count` counts, for screen readers, e.g. "files". */
   unit?: string;
+  /** Something wrong inside the item, shown after the note, e.g. "3 problems". */
+  alert?: string;
 }>();
 </script>
 
@@ -16,11 +18,15 @@ defineProps<{
     :aria-current="current"
     :tabindex="current ? 0 : -1"
   >
-    <span class="dot" :class="tone" aria-hidden="true"></span>
-    <strong><slot /></strong>
-    <span v-if="count !== undefined && count !== ''" class="n"
-      >{{ count }}<span class="sr-only"> {{ unit }}</span></span
+    <span class="text">
+      <strong><slot /></strong>
+      <small
+        >{{ note }}<span v-if="alert" class="issue"> · {{ alert }}</span></small
+      >
+    </span>
+    <!-- The count, on the item's status colour. -->
+    <span v-if="count !== undefined && count !== ''" class="tally" :class="tone"
+      ><span>{{ count }}<span class="sr-only"> {{ unit }}</span></span></span
     >
-    <small>{{ note }}</small>
   </button>
 </template>

@@ -89,8 +89,7 @@ button.step:hover{color:var(--fg);background:var(--surface)}
 .view .count{display:inline-block;margin-left:6px;padding:3px 7px;border-radius:999px;background:var(--bg);box-shadow:inset 0 0 0 1px var(--line);color:var(--fg);font:600 11px/1 var(--mono)}
 .view[aria-pressed="true"] .count{background:var(--fg);box-shadow:none;color:var(--bg)}
 
-.pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:600;white-space:nowrap}
-.pill::before,.dot{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;flex:none}
+.pill{display:inline-flex;align-items:center;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:600;white-space:nowrap}
 .ok{color:var(--ok)}.sug{color:var(--accent)}.warn{color:var(--warn)}.bad{color:var(--bad)}.off{color:var(--muted)}
 .pill.ok{background:var(--ok-soft)}.pill.sug{background:var(--accent-soft)}.pill.warn{background:var(--warn-soft)}.pill.bad{background:var(--bad-soft)}
 .pill.off{background:var(--surface);box-shadow:inset 0 0 0 1px var(--line)}
@@ -113,12 +112,20 @@ button.ep:hover{text-decoration-style:solid}
 .skipped>div{display:grid;grid-template-columns:minmax(0,1fr);gap:4px;padding:6px 0}
 .skipped>div+div{border-top:1px solid var(--line)}
 .list{display:grid;grid-template-columns:minmax(0,1fr);grid-auto-rows:max-content;align-content:start;overflow-y:auto}
-.item{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:2px 10px;align-items:center;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);padding:10px 12px}
+.item{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:stretch;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);padding:0}
+.item .text{display:grid;grid-template-columns:minmax(0,1fr);gap:2px;align-content:center;padding:10px 12px}
 .item:hover{background:var(--surface)}
 .item[aria-current="true"]{background:var(--accent-soft)}
 .item strong{font-weight:600;overflow-wrap:anywhere}
-.item small{grid-column:2;color:var(--muted);font-size:12.5px}
-.item .n{font:500 11px/1 var(--mono);color:var(--muted)}
+.item small{color:var(--muted);font-size:12.5px}
+/* The item's count on its status colour, the height of the item and flush with its right edge:
+   a shade of the colour behind and a stronger one for the number. */
+.tally{display:grid;place-items:center;min-width:40px;padding:8px 4px;background:color-mix(in srgb,currentColor 16%,var(--raised));font:600 12px/1 var(--mono)}
+.tally>span{color:color-mix(in srgb,currentColor 75%,#000)}
+@media (prefers-color-scheme:dark){
+  .tally{background:color-mix(in srgb,currentColor 24%,var(--bg))}
+  .tally>span{color:color-mix(in srgb,currentColor 50%,#fff)}
+}
 .detail{padding:16px;display:grid;grid-template-columns:minmax(0,1fr);grid-auto-rows:auto;align-content:start;gap:14px;min-width:0;background:var(--surface);overflow-y:auto}
 /* A heading over a list. Once the list is long enough to be worth scrolling, the block may shrink
    to a floor and its row takes only the height the pane has left. */
@@ -134,6 +141,13 @@ main,.list,.detail,.scroll{position:relative}
 .file{display:grid;grid-template-columns:subgrid;grid-column:1/-1;row-gap:2px;align-items:center;padding:5px 0}
 .file+.file{border-top:1px solid var(--line)}
 .file .edit{grid-column:2/-1}
+/* Rows run the width of the pane, so the problem being worked on can be tinted edge to edge. */
+.fill.bleed{margin-inline:-16px}
+.fill.bleed>:first-child,.fill.bleed .files{padding-inline:16px}
+.bleed .file{margin-inline:-16px;padding-inline:16px;scroll-margin-top:44px}
+.file.problem .ep{color:var(--warn)}
+.file.at{background:var(--warn-soft)}
+.file.at .issue{font-weight:600}
 .cols{position:sticky;top:0;z-index:1;background:var(--surface);padding:0 0 4px}
 
 /* The top of the selected group's pane, on the list's own colour and flush with the pane's edges. */
@@ -203,10 +217,9 @@ summary{cursor:pointer;color:var(--muted);font-weight:500}
 .link{background:none;border:0;padding:0;color:var(--accent);font-weight:500;text-decoration:underline}
 .banner.bad .btn,.banner.ok .btn{color:var(--fg)}
 .dropping{outline:2px dashed var(--accent);outline-offset:-6px}
-.pill.off::before{animation:none}
-.pill.busy::before{animation:pulse 1s ease-in-out infinite}
+.tally.busy>span{animation:pulse 1s ease-in-out infinite}
 @keyframes pulse{50%{opacity:.25}}
-@media (prefers-reduced-motion:reduce){.pill.busy::before{animation:none}}
+@media (prefers-reduced-motion:reduce){.tally.busy>span{animation:none}}
 /* Notices, then the page: what sits above the split, the split filling what is left, and anything
    below it. */
 main{display:grid;grid-template:auto minmax(0,1fr)/minmax(0,1fr);overflow:hidden;min-width:0;padding:10px var(--gutter) 12px}
@@ -230,7 +243,8 @@ main{display:grid;grid-template:auto minmax(0,1fr)/minmax(0,1fr);overflow:hidden
 .tickrow{display:grid;grid-template-columns:auto minmax(0,1fr);border-bottom:1px solid var(--line)}
 .tickrow:hover{background:var(--surface)}
 .tickrow:has(.item[aria-current="true"]){background:var(--accent-soft)}
-.tickrow .item{border:0;background:none;padding-left:10px}
+.tickrow .item{border:0;background:none}
+.tickrow .item .text{padding-left:10px}
 .tickrow .pick{padding-left:12px}
 .detail>.movebar{margin:0}
 .lookups{background:var(--accent-soft);border-radius:var(--r);padding:10px 12px}
@@ -259,6 +273,6 @@ h3{margin:0}
 kbd{font:500 12px/1 var(--mono);background:var(--surface);border:1px solid var(--edge);border-bottom-width:2px;border-radius:4px;padding:3px 6px;margin-right:4px}
 @media (forced-colors:active){
   .item[aria-current="true"],.tabs button[aria-current="page"],.step[aria-current],.seg button[aria-pressed="true"],.cand.on{outline:2px solid Highlight;outline-offset:-2px}
-  .dot,.pill::before,.progress i{forced-color-adjust:none}
+  .tally,.progress i{forced-color-adjust:none}
   input[type="checkbox"]{appearance:auto}
 }

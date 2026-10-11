@@ -4,6 +4,7 @@ import { focusOn } from "./focus.ts";
 import {
   api,
   apply,
+  canPreview,
   confirmAndNext,
   confirmed,
   go,
@@ -63,7 +64,7 @@ const steps = computed<
   {
     page: "preview",
     label: "Preview",
-    open: confirmed().length > 0 && !store.applied,
+    open: canPreview() && !store.applied,
     count: confirmed().length || null,
     unit: " groups confirmed",
   },
@@ -76,6 +77,7 @@ const SHORTCUTS: [keys: string[], action: string][] = [
   [["↑", "↓"], "Move through a list when it has focus"],
   [["Alt+↑", "Alt+↓"], "Previous or next item in the list, from anywhere"],
   [[`${mod}+Enter`], "Confirm and next on Matching; Apply on Preview"],
+  [["F8", "Shift+F8"], "Next or previous problem in the group's files on Matching"],
   [["/"], "Jump to the title search on Matching"],
   [[`${mod}+O`], "Add files"],
   [[`${mod}+Shift+O`], "Add folder"],
@@ -113,8 +115,14 @@ function shortcut(event: KeyboardEvent) {
   const command = event.ctrlKey || event.metaKey;
   const key = event.key.toLowerCase();
   let handled = true;
-  if (command && ["1", "2", "3", "4"].includes(key))
-    void go(KEYS[Number(key) - 1]!);
+  if (command && ["1", "2", "3", "4"].includes(key)) {
+    const page = KEYS[Number(key) - 1]!;
+    if (page !== "preview" || canPreview()) void go(page);
+  } else if (key === "f8")
+    // The buttons live on Matching, so this does nothing elsewhere.
+    document
+      .querySelector<HTMLElement>(`.problems [data-step="${event.shiftKey ? -1 : 1}"]`)
+      ?.click();
   else if (command && key === "o") void add(event.shiftKey);
   else if (command && key === "enter") {
     if (store.page === "review") void confirmAndNext();
