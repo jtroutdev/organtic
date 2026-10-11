@@ -102,19 +102,18 @@ async function setToken(value: string) {
 }
 const tvdbKey = ref("");
 const tvdbPin = ref("");
-// Why the key just entered was turned down, shown at the field until it is changed.
+// Why TVDB turned down the key just entered, shown at the field until it is changed. A failure
+// that says nothing about the key, such as no connection, is an ordinary error instead.
 const tvdbRejected = ref("");
 watch([tvdbKey, tvdbPin], () => (tvdbRejected.value = ""));
 async function setTvdbKey(key: string, pin: string) {
-  const sources = await run(() => api.setTvdbKey(key, pin));
-  if (!sources) {
-    if (key && store.error) {
-      tvdbRejected.value = store.error;
-      store.error = "";
-    }
+  const result = await run(() => api.setTvdbKey(key, pin));
+  if (!result) return;
+  store.sources = result.sources;
+  if (result.refused) {
+    tvdbRejected.value = result.refused;
     return;
   }
-  store.sources = sources;
   announce(key ? "TVDB key saved." : "TVDB key removed.");
   tvdbKey.value = "";
   tvdbPin.value = "";

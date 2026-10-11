@@ -56,8 +56,11 @@ export interface MediaApi {
   saveSettings(settings: AppSettings): Promise<AppSettings>;
   /** An empty token removes the stored one. */
   setToken(token: string): Promise<SourcesState>;
-  /** An empty key removes the stored one. A wrong key is rejected with the reason. */
-  setTvdbKey(key: string, pin: string): Promise<SourcesState>;
+  /**
+   * An empty key removes the stored one. A key TVDB turns down is not kept, and the reason comes
+   * back in `refused`; a failure that says nothing about the key rejects instead.
+   */
+  setTvdbKey(key: string, pin: string): Promise<{ sources: SourcesState; refused?: string }>;
   openReference(key: ReferenceKey): Promise<void>;
   /** Opens a match's page on its source's site; any other address is refused. */
   openSourcePage(address: string): Promise<void>;

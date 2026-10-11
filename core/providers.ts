@@ -96,6 +96,9 @@ interface TvmazeImage {
   resolutions?: { original?: { url?: string } };
 }
 // TMDB returns a path such as "/abc123.jpg"; anything else is not used.
+/** TVDB turned the key down. Any other sign-in failure says nothing about the key. */
+export class TvdbKeyRefused extends Error {}
+
 /** The sites a match's own page may be on. Nothing else is handed to the browser. */
 const SOURCE_HOSTS = new Set(["www.themoviedb.org", "www.tvmaze.com", "kitsu.app", "kitsu.io"]);
 /** The address to open for a match's page, or undefined when it is not one of the sources'. */
@@ -222,12 +225,12 @@ export class Providers {
         data?: { token?: unknown };
       } | null;
       const token = data?.data?.token;
-      if (!response.ok || typeof token !== "string" || !token)
-        throw new Error(
-          response.status === 401
-            ? "TVDB rejected that key. Check the key and, if it needs one, the PIN."
-            : `TVDB returned HTTP ${response.status} when signing in.`,
+      if (response.status === 401)
+        throw new TvdbKeyRefused(
+          "TVDB rejected that key. Check the key and, if it needs one, the PIN.",
         );
+      if (!response.ok || typeof token !== "string" || !token)
+        throw new Error(`TVDB returned HTTP ${response.status} when signing in.`);
       return token;
     })();
     // A failed sign-in is not remembered, so a corrected key or a retry can work.

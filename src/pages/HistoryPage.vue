@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { commonFolder } from "../../core/paths.ts";
 import type { BatchStatus } from "../../core/types.ts";
 import ListItem from "../components/ListItem.vue";
 import SplitView from "../components/SplitView.vue";
 import { announce, api, loadHistory, run, store } from "../store.ts";
+import { vTip } from "../tip.ts";
 
 const STATUS: Record<BatchStatus, [tone: string, label: string]> = {
   complete: ["ok", "Complete"],
@@ -17,6 +19,16 @@ const batch = computed(
     store.batches.find((item) => item.id === store.batchSelected) ??
     store.batches[0],
 );
+// Paths are shown from the folder the whole batch happened in, which is named once.
+const root = computed(() =>
+  commonFolder(
+    (batch.value?.operations ?? []).flatMap((op) =>
+      op.source ? [op.source, op.target] : [op.target],
+    ),
+  ),
+);
+const short = (path: string) =>
+  root.value && path.startsWith(root.value) ? path.slice(root.value.length) : path;
 const when = (value: string) =>
   value ? new Date(value).toLocaleString() : "Unreadable record";
 async function undo(id: string) {
@@ -63,7 +75,11 @@ async function undo(id: string) {
           STATUS[batch.status][1]
         }}</span>
       </div>
-      <p class="muted">{{ batch.count }} operations</p>
+      <p class="muted">
+        {{ batch.count }} operations<template v-if="root">
+          in <span class="mono">{{ root }}</span></template
+        >
+      </p>
       <div v-if="batch.status === 'interrupted'" class="banner bad">
         <span
           >This batch stopped before it finished. Some files have their new
@@ -85,8 +101,10 @@ async function undo(id: string) {
             class="mono oprow"
           >
             <template v-if="op.type === 'move' || op.type === 'rename'"
-              ><span class="muted">{{ op.source }}</span
-              ><span><span class="sr-only">became </span>{{ op.target }}</span></template
+              ><span v-tip="op.source" class="muted">{{ short(op.source ?? "") }}</span
+              ><span v-tip="op.target"
+                ><span class="sr-only">became </span>{{ short(op.target) }}</span
+              ></template
             >
             <template v-else
               ><span class="muted">{{
@@ -98,7 +116,7 @@ async function undo(id: string) {
                       ? "downloaded artwork"
                       : "new metadata file"
               }}</span
-              ><span>{{ op.target }}</span></template
+              ><span v-tip="op.target">{{ short(op.target) }}</span></template
             >
           </div>
           <p v-if="batch.operations.length > LIMIT" class="muted more">

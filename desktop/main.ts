@@ -12,7 +12,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { VIDEO_EXTENSIONS } from "../core/media.ts";
 import { AnimeMap } from "../core/animeMap.ts";
-import { Providers, sourcePage } from "../core/providers.ts";
+import { Providers, TvdbKeyRefused, sourcePage } from "../core/providers.ts";
 import {
   scanPaths,
   createPlan,
@@ -305,7 +305,7 @@ async function start() {
     tvdbSaved = false;
     if (!providers.hasTvdbKey) {
       await fs.rm(tvdbFile, { force: true });
-      return sources();
+      return { sources: sources() };
     }
     try {
       await providers.checkTvdbKey();
@@ -313,6 +313,8 @@ async function start() {
       // A key that does not work is not kept.
       providers.setTvdbKey("");
       await fs.rm(tvdbFile, { force: true });
+      if (error instanceof TvdbKeyRefused)
+        return { sources: sources(), refused: error.message };
       throw error;
     }
     if (canSave) {
@@ -324,7 +326,7 @@ async function start() {
       );
       tvdbSaved = true;
     }
-    return sources();
+    return { sources: sources() };
   });
   register("openReference", async (key) => {
     const url = Object.hasOwn(REFERENCES, key) ? REFERENCES[key] : undefined;
