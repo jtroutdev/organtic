@@ -157,16 +157,36 @@ async function start() {
     });
     return response.response === 1;
   };
+  // The file browser reopens where it was last used: beside the folder picked, or in the folder
+  // the files were picked from.
+  const lastFolderFile = path.join(userData, "last-folder");
+  let lastFolder: string | undefined;
+  try {
+    lastFolder = (await fs.readFile(lastFolderFile, "utf8")).trim() || undefined;
+  } catch {
+    // Nothing remembered yet.
+  }
+  async function remember(picked: string) {
+    lastFolder = path.dirname(picked);
+    try {
+      await fs.mkdir(userData, { recursive: true });
+      await fs.writeFile(lastFolderFile, lastFolder);
+    } catch {
+      // Still remembered until the app closes.
+    }
+  }
   async function pick(folder: boolean) {
     const result = await dialog.showOpenDialog(mainWindow!, {
       title: folder ? "Add a media folder" : "Add media files",
+      defaultPath: lastFolder,
       properties: folder ? ["openDirectory"] : ["openFile", "multiSelections"],
       ...(folder
         ? {}
         : { filters: [{ name: "Video", extensions: VIDEO_EXTENSIONS }] }),
     });
-    if (!result.canceled)
-      await session.addFiles(await scanPaths(result.filePaths));
+    if (result.canceled) return;
+    if (result.filePaths[0]) await remember(result.filePaths[0]);
+    await session.addFiles(await scanPaths(result.filePaths));
   }
 
   register("load", async () => ({
@@ -215,11 +235,13 @@ async function start() {
   register("chooseDestination", async () => {
     const result = await dialog.showOpenDialog(mainWindow!, {
       title: "Organise inside this folder",
+      defaultPath: lastFolder,
       properties: ["openDirectory", "createDirectory"],
     });
     const [folder] = result.filePaths;
-    if (!result.canceled && folder)
-      session.setDestination(await fs.realpath(folder));
+    if (result.canceled || !folder) return;
+    await remember(folder);
+    session.setDestination(await fs.realpath(folder));
   });
   register("resetDestination", async () => session.setDestination(null));
   register("preview", () => session.preview());
