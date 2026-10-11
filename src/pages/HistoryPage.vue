@@ -82,8 +82,7 @@ async function undo(id: string) {
           <div
             v-for="(op, index) in batch.operations.slice(0, LIMIT)"
             :key="index"
-            class="mono"
-            style="padding: 6px 0; border-bottom: 1px solid var(--line)"
+            class="mono oprow"
           >
             <template v-if="op.type === 'move' || op.type === 'rename'"
               ><span class="muted">{{ op.source }}</span> → {{ op.target }}</template
@@ -101,7 +100,7 @@ async function undo(id: string) {
               {{ op.target }}</template
             >
           </div>
-          <p v-if="batch.operations.length > LIMIT" class="muted" style="padding-top: 6px">
+          <p v-if="batch.operations.length > LIMIT" class="muted more">
             and {{ batch.operations.length - LIMIT }} more
           </p>
         </div>
