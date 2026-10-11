@@ -294,8 +294,40 @@ watch(
 // One file's season and episode can be corrected at a time; empty fields mean "none".
 const editing = ref<string | null>(null);
 const numbers = ref({ season: "", episode: "", episodeEnd: "" });
+// The session's own rules, applied here so a wrong number is marked at the field it was typed in.
+// Nothing is marked until a save has been tried.
+const numbersTried = ref(false);
+const numberErrors = computed(() => {
+  const text = (value: string | number) => String(value).trim();
+  const whole = (value: string, min: number, max: number) =>
+    /^\d+$/.test(value) && Number(value) >= min && Number(value) <= max;
+  const [season, episode, episodeEnd] = [
+    text(numbers.value.season),
+    text(numbers.value.episode),
+    text(numbers.value.episodeEnd),
+  ];
+  const first = whole(episode, 1, 9999);
+  return {
+    season:
+      season === "" || whole(season, 0, 999)
+        ? ""
+        : "Enter a season from 0 to 999, or leave it empty.",
+    episode: first ? "" : "Enter an episode number from 1 to 9999.",
+    episodeEnd:
+      episodeEnd === "" || !first || whole(episodeEnd, Number(episode) + 1, Number(episode) + 20)
+        ? ""
+        : "The last episode must come after the first, at most 20 later.",
+  };
+});
+const numbersError = computed(
+  () =>
+    (numbersTried.value &&
+      (numberErrors.value.season || numberErrors.value.episode || numberErrors.value.episodeEnd)) ||
+    "",
+);
 function show(file: QueueFile | undefined) {
   editing.value = file?.id ?? null;
+  numbersTried.value = false;
   if (!file) return;
   numbers.value = {
     season: String(file.numbers.season ?? ""),
@@ -368,6 +400,11 @@ async function saveNumbers(fileId: string, thenNext = false) {
     String(text).trim() === "" ? null : Number(text);
   const { season, episode, episodeEnd } = numbers.value;
   store.error = "";
+  numbersTried.value = true;
+  if (numbersError.value) {
+    await focusOn('.edit [aria-invalid="true"]');
+    return;
+  }
   try {
     await api.setEpisode(fileId, {
       season: value(season),
@@ -395,13 +432,20 @@ const setOrdering = (id: string | null, keepNumbers: boolean) =>
     await api.setOrdering(group.value!.key, id, keepNumbers);
     announce("Episode order updated.");
   });
-const search = () =>
-  run(() =>
+// An empty search is marked at the field, once it has been tried.
+const searchTried = ref(false);
+const searchEmpty = computed(() => searchTried.value && !query.value.trim());
+async function search() {
+  searchTried.value = true;
+  if (searchEmpty.value) return focusOn("#search-title");
+  searchTried.value = false;
+  await run(() =>
     api.search(group.value!.key, {
       query: query.value,
       kind: kind.value,
     }),
   );
+}
 </script>
 
 <template>
@@ -606,13 +650,15 @@ const search = () =>
             </form>
             <div class="matching">
               <div class="row between">
-                <form class="row" @submit.prevent="search">
+                <form class="row" novalidate @submit.prevent="search">
                   <input
                     id="search-title"
                     v-model="query"
                     class="input search"
                     aria-label="Search title"
-                    required
+                    aria-required="true"
+                    :aria-invalid="searchEmpty ? 'true' : undefined"
+                    aria-describedby="search-error"
                     maxlength="200"
                   />
                   <div class="seg" role="group" aria-label="Type">
@@ -632,6 +678,9 @@ const search = () =>
                     </button>
                   </div>
                   <button class="btn" type="submit" :disabled="busy">Search</button>
+                  <span v-if="searchEmpty" id="search-error" class="issue bad" role="alert"
+                    >Enter a title to search for.</span
+                  >
                 </form>
               <div
                 v-if="group.kind === 'tv' && group.orderings.length"
@@ -863,6 +912,7 @@ const search = () =>
                 <form
                   v-if="editing === file.id && (group.kind === 'tv' || isProblem(file))"
                   class="row numbers edit"
+                  novalidate
                   :aria-label="
                     group.kind === 'tv'
                       ? `Season and episode for ${file.source}`
@@ -875,16 +925,22 @@ const search = () =>
                   <label
                     >Season
                     <input v-model="numbers.season" class="input" type="number" min="0" max="999" placeholder="none"
+                      :aria-invalid="numbersTried && numberErrors.season ? 'true' : undefined" aria-describedby="numbers-error"
                   /></label>
                   <label
                     >Episode
-                    <input v-model="numbers.episode" class="input" type="number" min="1" max="9999" required
+                    <input v-model="numbers.episode" class="input" type="number" min="1" max="9999" aria-required="true"
+                      :aria-invalid="numbersTried && numberErrors.episode ? 'true' : undefined" aria-describedby="numbers-error"
                   /></label>
                   <label
                     ><span aria-hidden="true">to</span
                     ><span class="sr-only">Last episode, for a multi-episode file</span>
                     <input v-model="numbers.episodeEnd" class="input" type="number" min="2" max="9999" placeholder="single"
+                      :aria-invalid="numbersTried && numberErrors.episodeEnd ? 'true' : undefined" aria-describedby="numbers-error"
                   /></label>
+                  <span v-if="numbersError" id="numbers-error" class="issue bad" role="alert">{{
+                    numbersError
+                  }}</span>
                   </template>
                   <template v-if="isProblem(file)">
                     <!-- Both move on to the next problem. -->
