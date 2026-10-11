@@ -266,6 +266,8 @@ export interface QueueFile {
   id: string;
   /** Path relative to the folder it was imported from. */
   source: string;
+  /** Where the file is on disk. */
+  path: string;
   /** "S01E02-E03", "#12 → S01E12" for absolute numbers, or "film". */
   label: string;
   /** New path relative to the destination, when one can be worked out. */
