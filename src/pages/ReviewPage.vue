@@ -137,6 +137,13 @@ const why = computed(() => {
 });
 
 const busy = computed(() => store.busy || group.value?.status === "matching");
+// The file set aside that is on its way into the queue, shown on its own button.
+const including = ref<string | null>(null);
+async function include(fileId: string) {
+  including.value = fileId;
+  await run(() => api.include(fileId));
+  including.value = null;
+}
 async function remove() {
   const current = group.value!;
   selectNext(current.key);
@@ -395,36 +402,8 @@ const search = () =>
 </script>
 
 <template>
-  <div class="page" :class="{ bare: !store.queue.lookups }">
+  <div class="page bare">
       <h1 class="sr-only">Matching</h1>
-      <div v-if="store.queue.lookups" class="above">
-        <div class="lookups">
-          <div class="row between">
-            <span
-              >Looking up matches: {{ store.queue.lookups.done }} of
-              {{ plural(store.queue.lookups.total, "group") }} done</span
-            >
-            <button class="btn" type="button" @click="run(api.cancelLookups).then(() => announce('Lookups cancelled.'))">
-              Cancel lookups
-            </button>
-          </div>
-          <div
-            class="progress"
-            role="progressbar"
-            aria-label="Lookups done"
-            :aria-valuenow="store.queue.lookups.done"
-            aria-valuemin="0"
-            :aria-valuemax="store.queue.lookups.total"
-          >
-            <i
-              :style="{
-                width: `${(store.queue.lookups.done / store.queue.lookups.total) * 100}%`,
-              }"
-            ></i>
-          </div>
-        </div>
-      </div>
-
       <SplitView :current="group?.key" list="Groups" detail="Selected group" :aria-busy="group?.status === 'matching'">
         <template #head>
           <div class="queue">
@@ -464,6 +443,22 @@ const search = () =>
                 {{ label }}<span class="count">{{ countFor(id) }}</span>
               </button>
             </div>
+            <!-- Lookups fill the rule under the queue's heading, so nothing moves to make room. -->
+            <div
+              v-if="store.queue.lookups"
+              class="progress under"
+              role="progressbar"
+              aria-label="Lookups done"
+              :aria-valuenow="store.queue.lookups.done"
+              aria-valuemin="0"
+              :aria-valuemax="store.queue.lookups.total"
+            >
+              <i
+                :style="{
+                  width: `${(store.queue.lookups.done / store.queue.lookups.total) * 100}%`,
+                }"
+              ></i>
+            </div>
           </div>
         </template>
         <template v-if="store.queue.skipped.length" #foot>
@@ -477,8 +472,8 @@ const search = () =>
                 <span class="mono">{{ file.source }}</span>
                 <span class="row between">
                   <span class="pill off">{{ file.reason }}</span>
-                  <button class="btn" type="button" :disabled="store.busy" @click="run(() => api.include(file.id))">
-                    Include
+                  <button class="btn" type="button" :disabled="store.busy" @click="include(file.id)">
+                    {{ including === file.id ? "Including…" : "Include" }}
                   </button>
                 </span>
               </div>
@@ -890,11 +885,18 @@ const search = () =>
                   /></label>
                   </template>
                   <template v-if="isProblem(file)">
+                    <!-- Both move on to the next problem. -->
                     <button v-if="group.kind === 'tv'" class="btn primary" type="submit" :disabled="busy">
-                      Save and next
+                      Save
                     </button>
-                    <button class="btn" type="button" :disabled="busy" @click="leaveOut(file.id)">
-                      Leave out and next
+                    <button
+                      class="btn"
+                      type="button"
+                      title="Leave this file out of the batch"
+                      :disabled="busy"
+                      @click="leaveOut(file.id)"
+                    >
+                      Skip
                     </button>
                   </template>
                   <template v-else>
@@ -915,7 +917,16 @@ const search = () =>
           <button class="btn" type="button" :disabled="store.busy" @click="run(api.clear)">
             Clear queue
           </button>
-          <span class="muted">
+          <template v-if="store.queue.lookups">
+            <span class="muted"
+              >Looking up matches: {{ store.queue.lookups.done }} of
+              {{ plural(store.queue.lookups.total, "group") }} done</span
+            >
+            <button class="btn" type="button" @click="run(api.cancelLookups).then(() => announce('Lookups cancelled.'))">
+              Cancel lookups
+            </button>
+          </template>
+          <span v-else class="muted">
             {{ plural(fileCount, "file") }} in {{ plural(store.queue.groups.length, "group") }}
           </span>
         </div>
@@ -933,6 +944,7 @@ const search = () =>
           <button
             class="btn primary"
             type="button"
+            :class="{ off: !readyFiles || !!waiting }"
             :disabled="!readyFiles || !!waiting"
             @click="go('preview')"
           >

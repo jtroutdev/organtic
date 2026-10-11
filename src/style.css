@@ -75,6 +75,10 @@ button.step:hover{color:var(--fg);background:var(--surface)}
 .btn.quiet{border-color:transparent;background:none;color:var(--muted);padding-inline:8px}
 .btn.quiet:hover{color:var(--fg);background:var(--surface)}
 .btn:disabled{opacity:.5;cursor:not-allowed}
+/* While an action runs, controls stop responding but keep their look: the wait shows where it was
+   started and where its result lands, not across the screen. `.off` marks a control that is
+   unavailable for a reason of its own. */
+.working :disabled:not(.off),[aria-busy="true"] :disabled:not(.off){opacity:1;cursor:progress}
 .label{font:500 11px/1.4 var(--body);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .dest{display:flex;flex-wrap:wrap;gap:2px 10px;align-items:center}
 .dest .mono{min-width:0}
@@ -107,7 +111,7 @@ button.ep:hover{text-decoration-style:solid}
 .panel{background:var(--raised);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
 .split{display:grid;grid-template:minmax(0,1fr)/minmax(220px,300px) minmax(0,1fr)}
 .side{border-right:1px solid var(--line);display:grid;grid-template:auto minmax(0,1fr) auto/minmax(0,1fr);min-height:0}
-.sidehead:not(:empty){padding:10px 12px;border-bottom:1px solid var(--line)}
+.sidehead:not(:empty){position:relative;padding:10px 12px;border-bottom:1px solid var(--line)}
 .sidefoot:not(:empty){padding:10px 12px;border-top:1px solid var(--line)}
 .skipped>div{display:grid;grid-template-columns:minmax(0,1fr);gap:4px;padding:6px 0}
 .skipped>div+div{border-top:1px solid var(--line)}
@@ -137,6 +141,8 @@ main,.list,.detail,.scroll{position:relative}
 .capped{max-height:min(30vh,220px);margin-top:8px}
 .progress{height:4px;background:var(--edge);border-radius:2px;overflow:hidden;margin-top:6px}
 .progress i{display:block;height:100%;background:var(--brand)}
+/* Progress drawn over the rule beneath a panel's heading, taking no room of its own. */
+.progress.under{position:absolute;inset:auto 0 -1px;height:2px;margin:0;border-radius:0;background:var(--line)}
 .files{display:grid;grid-template-columns:max-content minmax(0,2fr) minmax(0,3fr);grid-auto-rows:max-content;align-content:start;column-gap:16px}
 .file{display:grid;grid-template-columns:subgrid;grid-column:1/-1;row-gap:2px;align-items:center;padding:5px 0}
 .file+.file{border-top:1px solid var(--line)}
@@ -247,7 +253,6 @@ main{display:grid;grid-template:auto minmax(0,1fr)/minmax(0,1fr);overflow:hidden
 .tickrow .item .text{padding-left:10px}
 .tickrow .pick{padding-left:12px}
 .detail>.movebar{margin:0}
-.lookups{background:var(--accent-soft);border-radius:var(--r);padding:10px 12px}
 .progress i{transition:width .2s}
 @media (prefers-reduced-motion:reduce){.progress i{transition:none}}
 

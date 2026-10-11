@@ -162,7 +162,7 @@ watch(
   >
   <div
     class="wrap"
-    :class="{ dropping }"
+    :class="{ dropping, working: store.busy }"
     @dragover.prevent="dropping = true"
     @dragleave="dropping = false"
     @drop.prevent="drop"
