@@ -22,6 +22,7 @@ import {
   run,
   selectNext,
   store,
+  unconfirmed,
 } from "../store.ts";
 import type { Filter } from "../store.ts";
 
@@ -45,9 +46,10 @@ const readyFiles = computed(() =>
     0,
   ),
 );
-const problems = computed(
-  () => group.value?.files.filter((file) => file.issue).length ?? 0,
-);
+const waiting = computed(unconfirmed);
+// A file left out of the batch is no longer a problem to solve.
+const isProblem = (file: QueueFile) => !!file.issue && !file.excluded;
+const problemsIn = (item: { files: QueueFile[] }) => item.files.filter(isProblem).length;
 const filters: [Filter, string][] = [
   ["all", "All"],
   ["todo", "Needs you"],
@@ -282,14 +284,65 @@ watch(
 // One file's season and episode can be corrected at a time; empty fields mean "none".
 const editing = ref<string | null>(null);
 const numbers = ref({ season: "", episode: "", episodeEnd: "" });
-function edit(file: QueueFile) {
-  editing.value = file.id;
+function show(file: QueueFile | undefined) {
+  editing.value = file?.id ?? null;
+  if (!file) return;
   numbers.value = {
     season: String(file.numbers.season ?? ""),
     episode: String(file.numbers.episode ?? ""),
     episodeEnd: String(file.numbers.episodeEnd ?? ""),
   };
 }
+/** Opens a file's form, brings its row into view and puts the keyboard in it. */
+async function edit(file: QueueFile) {
+  show(file);
+  await nextTick();
+  const row = document.querySelector<HTMLElement>(`[data-file="${CSS.escape(file.id)}"]`);
+  row?.scrollIntoView({ block: "nearest" });
+  row?.querySelector<HTMLElement>(".edit input, .edit button")?.focus();
+}
+// Problems are walked like search results: one at a time, back and forth, each opening its form
+// where it sits in the list.
+const problemFiles = computed(() => group.value?.files.filter(isProblem) ?? []);
+const problemAt = computed(() =>
+  problemFiles.value.findIndex((file) => file.id === editing.value),
+);
+function step(by: 1 | -1) {
+  const list = problemFiles.value;
+  if (!list.length) return;
+  const to =
+    problemAt.value < 0
+      ? by > 0
+        ? 0
+        : list.length - 1
+      : (problemAt.value + by + list.length) % list.length;
+  const file = list[to]!;
+  void edit(file);
+  announce(`Problem ${to + 1} of ${list.length}: ${file.issue}`);
+}
+/** Once a problem is dealt with: on to the next one down the list, wrapping round. */
+async function onward(fileId: string) {
+  await nextTick();
+  const files = group.value?.files ?? [];
+  const from = files.findIndex((file) => file.id === fileId);
+  const next = [...files.slice(from + 1), ...files.slice(0, Math.max(from, 0))].find(isProblem);
+  if (next) return edit(next);
+  // Still unsolved and the only one: stay on it.
+  if (files.some((file) => file.id === fileId && isProblem(file))) return;
+  closeEdit(fileId);
+  announce("No problems left in this group.");
+}
+async function leaveOut(fileId: string) {
+  if (store.busy) return;
+  await run(() => api.exclude(fileId, true));
+  await onward(fileId);
+}
+// A group opens on its first problem, without taking the keyboard from the queue.
+watch(
+  () => group.value?.key,
+  () => show(problemFiles.value[0]),
+  { immediate: true },
+);
 // Closing the form removes the control that had focus; hand it back to the file's episode button.
 function closeEdit(fileId: string) {
   editing.value = null;
@@ -300,7 +353,7 @@ function split(path: string) {
   const at = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1;
   return [path.slice(0, at), path.slice(at)];
 }
-async function saveNumbers(fileId: string) {
+async function saveNumbers(fileId: string, thenNext = false) {
   const value = (text: string | number) =>
     String(text).trim() === "" ? null : Number(text);
   const { season, episode, episodeEnd } = numbers.value;
@@ -311,8 +364,9 @@ async function saveNumbers(fileId: string) {
       episode: value(episode),
       episodeEnd: value(episodeEnd),
     });
-    closeEdit(fileId);
     announce("Season and episode updated.");
+    if (thenNext) await onward(fileId);
+    else closeEdit(fileId);
   } catch (error) {
     // Keep the form open so the numbers can be fixed.
     store.error = (error instanceof Error ? error.message : String(error)).replace(
@@ -450,6 +504,7 @@ const search = () =>
               :note="STATUS[item.status][1]"
               :count="item.files.length"
               unit="files"
+              :alert="problemsIn(item) ? plural(problemsIn(item), 'problem') : ''"
               @click="open($event, item.key)"
             >
               <template v-if="item.chosen != null">
@@ -703,7 +758,7 @@ const search = () =>
               </div>
             </div>
           </div>
-          <div class="fill">
+          <div class="fill bleed">
             <div>
               <form
                 v-if="pickedHere.length"
@@ -739,18 +794,36 @@ const search = () =>
                     :indeterminate="pickedHere.length > 0 && !allPicked"
                     @change="pickAll(($event.target as HTMLInputElement).checked)"
                   />
-                  {{ plural(group.files.length, "file")
-                  }}<span v-if="problems" class="issue">
-                    · {{ plural(problems, "problem") }}</span
-                  >
+                  {{ plural(group.files.length, "file") }}
                 </label>
                 <span class="label">Current name</span>
-                <span class="label">New name</span>
+                <span class="row between">
+                  <span class="label">New name</span>
+                  <span
+                    v-if="problemFiles.length"
+                    class="row problems"
+                    role="group"
+                    aria-label="Problems in this group"
+                  >
+                    <span class="pill warn">{{
+                      problemAt < 0
+                        ? plural(problemFiles.length, "problem")
+                        : `Problem ${problemAt + 1} of ${problemFiles.length}`
+                    }}</span>
+                    <button class="btn" type="button" data-step="-1" aria-label="Previous problem" @click="step(-1)">
+                      Previous
+                    </button>
+                    <button class="btn" type="button" data-step="1" aria-label="Next problem" @click="step(1)">
+                      Next
+                    </button>
+                  </span>
+                </span>
               </div>
               <div
                 v-for="file in group.files"
                 :key="file.id"
                 class="file"
+                :class="{ problem: isProblem(file), at: editing === file.id && isProblem(file) }"
                 :data-file="file.id"
               >
                 <span class="pick">
@@ -778,28 +851,33 @@ const search = () =>
                   ><span class="dir">{{ split(file.source)[0] }}</span
                   ><span class="base">{{ split(file.source)[1] }}</span></span
                 >
-                <span v-if="file.issue" class="issue">{{ file.issue }}</span>
-                <span v-else-if="file.excluded"
+                <span v-if="file.excluded"
                   ><span class="muted">Left out of the next batch. </span>
                   <button class="btn" type="button" @click="run(() => api.exclude(file.id, false))">
                     Include again
                   </button></span
                 >
+                <span v-else-if="file.issue" class="issue">{{ file.issue }}</span>
                 <span v-else-if="file.target" class="path" :title="file.target"
                   ><span class="dir muted">{{ split(file.target)[0] }}</span
                   ><span class="base">{{ split(file.target)[1] }}</span></span
                 >
                 <span v-else class="muted">Appears once a match is chosen.</span>
                 <form
-                  v-if="editing === file.id"
+                  v-if="editing === file.id && (group.kind === 'tv' || isProblem(file))"
                   class="row numbers edit"
-                  :aria-label="`Season and episode for ${file.source}`"
-                  @submit.prevent="saveNumbers(file.id)"
+                  :aria-label="
+                    group.kind === 'tv'
+                      ? `Season and episode for ${file.source}`
+                      : `Problem with ${file.source}`
+                  "
+                  @submit.prevent="group.kind === 'tv' && saveNumbers(file.id, isProblem(file))"
                   @keydown.esc="closeEdit(file.id)"
                 >
+                  <template v-if="group.kind === 'tv'">
                   <label
                     >Season
-                    <input v-focus v-model="numbers.season" class="input" type="number" min="0" max="999" placeholder="none"
+                    <input v-model="numbers.season" class="input" type="number" min="0" max="999" placeholder="none"
                   /></label>
                   <label
                     >Episode
@@ -810,8 +888,19 @@ const search = () =>
                     ><span class="sr-only">Last episode, for a multi-episode file</span>
                     <input v-model="numbers.episodeEnd" class="input" type="number" min="2" max="9999" placeholder="single"
                   /></label>
-                  <button class="btn primary" type="submit" :disabled="busy">Save</button>
-                  <button class="btn quiet" type="button" @click="closeEdit(file.id)">Cancel</button>
+                  </template>
+                  <template v-if="isProblem(file)">
+                    <button v-if="group.kind === 'tv'" class="btn primary" type="submit" :disabled="busy">
+                      Save and next
+                    </button>
+                    <button class="btn" type="button" :disabled="busy" @click="leaveOut(file.id)">
+                      Leave out and next
+                    </button>
+                  </template>
+                  <template v-else>
+                    <button class="btn primary" type="submit" :disabled="busy">Save</button>
+                    <button class="btn quiet" type="button" @click="closeEdit(file.id)">Cancel</button>
+                  </template>
                 </form>
               </div>
             </div>
@@ -831,6 +920,7 @@ const search = () =>
           </span>
         </div>
         <div class="row">
+          <span v-if="waiting" class="muted">{{ plural(waiting, "group") }} left to confirm</span>
           <button
             v-if="suggested"
             class="btn"
@@ -843,7 +933,7 @@ const search = () =>
           <button
             class="btn primary"
             type="button"
-            :disabled="!readyFiles"
+            :disabled="!readyFiles || !!waiting"
             @click="go('preview')"
           >
             Preview changes
