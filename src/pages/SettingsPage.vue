@@ -102,9 +102,18 @@ async function setToken(value: string) {
 }
 const tvdbKey = ref("");
 const tvdbPin = ref("");
+// Why the key just entered was turned down, shown at the field until it is changed.
+const tvdbRejected = ref("");
+watch([tvdbKey, tvdbPin], () => (tvdbRejected.value = ""));
 async function setTvdbKey(key: string, pin: string) {
   const sources = await run(() => api.setTvdbKey(key, pin));
-  if (!sources) return;
+  if (!sources) {
+    if (key && store.error) {
+      tvdbRejected.value = store.error;
+      store.error = "";
+    }
+    return;
+  }
   store.sources = sources;
   announce(key ? "TVDB key saved." : "TVDB key removed.");
   tvdbKey.value = "";
@@ -190,9 +199,11 @@ const sections = computed<[string, string, string, string][]>(() => [
               class="input mono"
               spellcheck="false"
               maxlength="500"
+              :aria-invalid="errors[key].length ? 'true' : undefined"
+              :aria-describedby="`template-${key}-example`"
               @input="preset = 'custom'"
           /></label>
-          <div class="example mono" aria-live="polite">
+          <div :id="`template-${key}-example`" class="example mono" aria-live="polite">
             <span class="sr-only">Example: </span>
             <span v-if="errors[key].length" class="issue bad">{{
               errors[key].join(" ")
@@ -329,6 +340,8 @@ const sections = computed<[string, string, string, string][]>(() => [
             autocomplete="off"
             aria-label="TVDB API key"
             placeholder="Paste your TVDB API key"
+            :aria-invalid="tvdbRejected ? 'true' : undefined"
+            aria-describedby="tvdb-rejected"
           />
           <input
             v-model="tvdbPin"
@@ -351,6 +364,9 @@ const sections = computed<[string, string, string, string][]>(() => [
             Remove
           </button>
         </form>
+        <p v-if="tvdbRejected" id="tvdb-rejected" class="issue bad" role="alert">
+          {{ tvdbRejected }}
+        </p>
         <div class="row">
           <span class="pill" :class="store.sources.tvdb === 'none' ? 'off' : 'ok'">{{
             NOTES[store.sources.tvdb]

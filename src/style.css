@@ -281,7 +281,7 @@ main,.list,.detail,.scroll{position:relative}
 .input::placeholder{color:var(--color-on-surface-muted);opacity:1}
 .input:hover:enabled{border-color:var(--color-on-surface-muted)}
 /* An invalid field changes its edge; the sentence that says why sits beneath it. */
-.input[aria-invalid="true"]{border-color:var(--color-error)}
+.input[aria-invalid="true"],.input[aria-invalid="true"]:hover:enabled{border-color:var(--color-error)}
 .input:disabled{opacity:var(--opacity-disabled);cursor:not-allowed}
 .input.search{flex:0 1 220px;width:220px}
 .row>.input.grow{flex:1 1 220px;width:auto}
