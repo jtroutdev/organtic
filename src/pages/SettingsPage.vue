@@ -212,13 +212,13 @@ const sections = computed<[string, string, string, string][]>(() => [
           </button>
           <span v-if="dirty" class="muted">Not saved yet.</span>
         </div>
-        <div>
-          <h3 class="label" style="margin-bottom: 6px">Placeholders</h3>
+        <div class="stack">
+          <h3 class="label">Placeholders</h3>
           <div class="tokens">
             <code v-for="name in PLACEHOLDERS" :key="name" v-text="'{' + name + '}'"></code>
             <code>{season:00}</code>
           </div>
-          <p class="muted" style="margin-top: 8px">
+          <p class="muted">
             “/” starts a folder. Add :00 to pad a number. A placeholder with no
             value is dropped along with its empty brackets. {idsource} and {id}
             give the best ID the match has: TMDB, then TVDB, then IMDb.
@@ -241,12 +241,11 @@ const sections = computed<[string, string, string, string][]>(() => [
         <form class="row" @submit.prevent="setToken(token)">
           <input
             v-model="token"
-            class="input"
+            class="input grow"
             type="password"
             autocomplete="off"
             aria-label="TMDB API read access token"
             placeholder="Paste your TMDB token"
-            style="flex: 1 1 220px; width: auto"
           />
           <button class="btn primary" :class="{ off: !token.trim() }" type="submit" :disabled="!token.trim() || store.busy">
             Save token
@@ -275,7 +274,7 @@ const sections = computed<[string, string, string, string][]>(() => [
           This product uses the TMDB API but is not endorsed or certified by
           TMDB.
         </p>
-        <div style="border-top: 1px solid var(--line); padding-top: 14px">
+        <div class="section">
           <h3 class="sub">TVmaze</h3>
           <p class="muted">
             TV shows only. Needs no account, and is used for shows when no TMDB
@@ -288,7 +287,7 @@ const sections = computed<[string, string, string, string][]>(() => [
             >.
           </p>
         </div>
-        <div style="border-top: 1px solid var(--line); padding-top: 14px">
+        <div class="section">
           <h3 class="sub">Kitsu</h3>
           <p class="muted">
             An anime catalogue with romaji, English and Japanese titles. Needs
@@ -311,7 +310,7 @@ const sections = computed<[string, string, string, string][]>(() => [
             ></span
           >
         </label>
-        <div style="border-top: 1px solid var(--line); padding-top: 14px">
+        <div class="section">
           <h3 class="sub">TheTVDB <span class="muted">(optional)</span></h3>
           <p class="muted">
             Used only to title anime specials that are numbered as TVDB lists
@@ -325,21 +324,19 @@ const sections = computed<[string, string, string, string][]>(() => [
         <form class="row" @submit.prevent="setTvdbKey(tvdbKey, tvdbPin)">
           <input
             v-model="tvdbKey"
-            class="input"
+            class="input grow more"
             type="password"
             autocomplete="off"
             aria-label="TVDB API key"
             placeholder="Paste your TVDB API key"
-            style="flex: 2 1 200px; width: auto"
           />
           <input
             v-model="tvdbPin"
-            class="input"
+            class="input grow less"
             type="password"
             autocomplete="off"
             aria-label="TVDB subscriber PIN, if your key needs one"
             placeholder="PIN, if needed"
-            style="flex: 1 1 120px; width: auto"
           />
           <button class="btn primary" :class="{ off: !tvdbKey.trim() }" type="submit" :disabled="!tvdbKey.trim() || store.busy">
             Check and save

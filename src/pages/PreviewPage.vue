@@ -124,8 +124,7 @@ async function toggle(key: (typeof options)[number][0], box: HTMLInputElement) {
             <span
               v-for="warning in store.applied.warnings"
               :key="warning"
-              class="mono"
-              style="display: block"
+              class="mono block"
               >{{ warning }}</span
             ></span
           >
@@ -299,7 +298,7 @@ async function toggle(key: (typeof options)[number][0], box: HTMLInputElement) {
               class="node"
               role="listitem"
               :class="{ dir: !row.item, clash: row.item?.problem }"
-              :style="{ paddingLeft: `${row.depth * 18}px` }"
+              :style="{ '--depth': row.depth }"
             >
               <span>{{ row.name }}</span>
               <span v-if="row.isNew" class="tag">new folder</span>
@@ -338,8 +337,7 @@ async function toggle(key: (typeof options)[number][0], box: HTMLInputElement) {
             <div
               v-for="name in group.left"
               :key="name"
-              class="mono muted"
-              style="padding-top: 5px"
+              class="mono muted leftover"
             >
               {{ name }}
             </div>

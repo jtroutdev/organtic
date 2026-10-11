@@ -607,11 +607,10 @@ const search = () =>
                   <input
                     id="search-title"
                     v-model="query"
-                    class="input"
+                    class="input search"
                     aria-label="Search title"
                     required
                     maxlength="200"
-                    style="flex: 0 1 220px; width: 220px"
                   />
                   <div class="seg" role="group" aria-label="Type">
                     <button type="button" :aria-pressed="kind === 'movie'" @click="kind = 'movie'">
@@ -675,7 +674,7 @@ const search = () =>
               </div>
               </div>
               <div v-if="group.numberingChoice" class="row numbers">
-                <span class="muted" style="font-size: 12.5px; font-weight: 500"
+                <span class="hint"
                   >Number seasons and episodes as</span
                 >
                 <div class="seg" role="group" aria-label="Number seasons and episodes as">

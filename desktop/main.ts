@@ -338,7 +338,8 @@ async function start() {
       height: 900,
       minWidth: 840,
       minHeight: 650,
-      backgroundColor: "#0c0d19",
+      // --color-background in sRGB hex: this option does not take oklch.
+      backgroundColor: "#0e0c19",
       title: "Organtic",
       webPreferences: {
         // Sandboxed preload scripts must be CommonJS, so this one is not compiled.
