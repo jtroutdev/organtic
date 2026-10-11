@@ -373,6 +373,7 @@ async function toggle(key: (typeof options)[number][0], box: HTMLInputElement) {
         <button
           class="btn primary"
           type="button"
+          :class="{ off: preview.blocked || !api.desktop }"
           :disabled="preview.blocked || store.busy || !api.desktop"
           @click="apply"
         >

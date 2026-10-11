@@ -204,6 +204,7 @@ const sections = computed<[string, string, string, string][]>(() => [
           <button
             class="btn primary"
             type="button"
+            :class="{ off: !valid || (!dirty && store.settings.preset === 'custom') }"
             :disabled="!valid || store.busy || (!dirty && store.settings.preset === 'custom')"
             @click="saveTemplates"
           >
@@ -247,7 +248,7 @@ const sections = computed<[string, string, string, string][]>(() => [
             placeholder="Paste your TMDB token"
             style="flex: 1 1 220px; width: auto"
           />
-          <button class="btn primary" type="submit" :disabled="!token.trim() || store.busy">
+          <button class="btn primary" :class="{ off: !token.trim() }" type="submit" :disabled="!token.trim() || store.busy">
             Save token
           </button>
           <button
@@ -340,7 +341,7 @@ const sections = computed<[string, string, string, string][]>(() => [
             placeholder="PIN, if needed"
             style="flex: 1 1 120px; width: auto"
           />
-          <button class="btn primary" type="submit" :disabled="!tvdbKey.trim() || store.busy">
+          <button class="btn primary" :class="{ off: !tvdbKey.trim() }" type="submit" :disabled="!tvdbKey.trim() || store.busy">
             Check and save
           </button>
           <button
