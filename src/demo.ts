@@ -306,4 +306,5 @@ export const demoApi: MediaApi = {
     return sources;
   },
   async openReference() {},
+  async openSourcePage() {},
 };

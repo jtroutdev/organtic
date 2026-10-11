@@ -59,4 +59,6 @@ export interface MediaApi {
   /** An empty key removes the stored one. A wrong key is rejected with the reason. */
   setTvdbKey(key: string, pin: string): Promise<SourcesState>;
   openReference(key: ReferenceKey): Promise<void>;
+  /** Opens a match's page on its source's site; any other address is refused. */
+  openSourcePage(address: string): Promise<void>;
 }

@@ -50,6 +50,8 @@ export interface Candidate {
   /** Artwork addresses on the provider's image host, when it has any. */
   posterUrl?: string;
   backdropUrl?: string;
+  /** A small poster, when the provider has one whose address cannot be worked out from `posterUrl`. */
+  posterThumbUrl?: string;
 }
 
 /** What a provider returns for one season. */

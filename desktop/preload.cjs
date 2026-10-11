@@ -33,6 +33,7 @@ contextBridge.exposeInMainWorld("organtic", {
       "setToken",
       "setTvdbKey",
       "openReference",
+      "openSourcePage",
     ].map((method) => [method, invoke(method)]),
   ),
   onQueue: (listener) =>
