@@ -14,8 +14,8 @@
   "main": "build/desktop/main.js",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.app.json && node scripts/vue-tsc.cjs -p tsconfig.vue.json",
-    "build": "vite build && tsc -p tsconfig.build.json",
+    "typecheck": "node scripts/tsc.cjs -p tsconfig.json && node scripts/tsc.cjs -p tsconfig.app.json && node scripts/vue-tsc.cjs -p tsconfig.vue.json",
+    "build": "vite build && node scripts/tsc.cjs -p tsconfig.build.json",
     "start": "npm run build && electron .",
     "test": "node --test --test-isolation=none tests/*.test.ts",
     "package": "npm run build && electron-builder --dir",
