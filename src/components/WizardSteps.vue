@@ -11,11 +11,13 @@ defineProps<{
   }[];
   /** The step the wizard is on, counting from 1. */
   at: number;
+  /** Another page is on screen, so the step the wizard is on can be gone back to. */
+  away?: boolean;
 }>();
 defineEmits<{ go: [id: T] }>();
 </script>
 
-<!-- A finished or reachable step is a button; the rest are plain text. -->
+<!-- A finished or reachable step is a button; the rest are plain text, as is the step on screen. -->
 <template>
   <nav class="steps" aria-label="Progress">
     <ol>
@@ -23,12 +25,12 @@ defineEmits<{ go: [id: T] }>();
         <li v-if="index" class="join" aria-hidden="true"></li>
         <li>
           <component
-            :is="step.open && index + 1 !== at ? 'button' : 'span'"
+            :is="step.id && (index + 1 === at ? away : step.open) ? 'button' : 'span'"
             class="step"
-            :class="{ done: index + 1 < at }"
-            :type="step.open && index + 1 !== at ? 'button' : undefined"
-            :aria-current="index + 1 === at ? 'step' : undefined"
-            @click="step.open && step.id && index + 1 !== at && $emit('go', step.id)"
+            :class="{ done: index + 1 < at, at: index + 1 === at }"
+            :type="step.id && (index + 1 === at ? away : step.open) ? 'button' : undefined"
+            :aria-current="index + 1 === at && !away ? 'step' : undefined"
+            @click="step.id && (index + 1 === at ? away : step.open) && $emit('go', step.id)"
           >
             <span class="badge">
               <svg
@@ -65,11 +67,11 @@ defineEmits<{ go: [id: T] }>();
 .step{display:inline-flex;align-items:center;gap:var(--space-nested);height:var(--size-control);padding:0 var(--space-sm);border:0;border-radius:var(--radius-md);background:none;color:var(--color-on-surface-muted);font:var(--font-label-lg);white-space:nowrap}
 button.step:hover{color:var(--color-on-surface);background-image:linear-gradient(var(--color-hover) 0 0)}
 button.step:active{background-image:linear-gradient(var(--color-pressed) 0 0)}
-.step.done,.step[aria-current]{color:var(--color-on-surface)}
-.step[aria-current]{font-weight:600}
+.step.done,.step.at{color:var(--color-on-surface)}
+.step.at{font-weight:600}
 .badge{display:inline-grid;place-items:center;flex:none;width:var(--size-badge);height:var(--size-badge);border:1px solid var(--color-outline);border-radius:var(--radius-full);font:var(--font-code-sm)}
 .step.done .badge{background:var(--color-success-soft);border-color:transparent;color:var(--color-success)}
-.step[aria-current] .badge{background:var(--color-primary);border-color:var(--color-primary);color:var(--color-on-primary)}
+.step.at .badge{background:var(--color-primary);border-color:var(--color-primary);color:var(--color-on-primary)}
 .n{font:var(--font-code-sm);color:var(--color-on-surface-muted)}
 @media (forced-colors:active){
   .step[aria-current]{outline:2px solid Highlight;outline-offset:-2px}

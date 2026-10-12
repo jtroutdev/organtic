@@ -19,7 +19,7 @@ import SplitView from "../components/SplitView.vue";
 import StatusPill from "../components/StatusPill.vue";
 import TextInput from "../components/TextInput.vue";
 import WebLink from "../components/WebLink.vue";
-import { announce, api, run, saveSettings, store } from "../store.ts";
+import { announce, api, resume, resumeLabel, run, saveSettings, store } from "../store.ts";
 import tmdbLogo from "/tmdb-logo.svg";
 
 const SAMPLES: Record<"movie" | "episode", MediaLike> = {
@@ -163,7 +163,12 @@ const sections = computed<[string, string, string, string][]>(() => [
 <template>
   <div class="page">
     <div class="above">
-      <PageHeading title="Settings">Saved on this computer and used for every batch.</PageHeading>
+      <PageHeading title="Settings">
+        Saved on this computer and used for every batch.
+        <template #actions>
+          <ActionButton @click="resume">Back to {{ resumeLabel() }}</ActionButton>
+        </template>
+      </PageHeading>
     </div>
     <SplitView :current="store.section" list="Settings sections" detail="Selected section">
       <template #side>

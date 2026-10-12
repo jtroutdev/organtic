@@ -10,7 +10,7 @@ import PageHeading from "../components/PageHeading.vue";
 import SplitView from "../components/SplitView.vue";
 import StatusPill from "../components/StatusPill.vue";
 import SurfaceCard from "../components/SurfaceCard.vue";
-import { announce, api, loadHistory, run, store } from "../store.ts";
+import { announce, api, loadHistory, resume, resumeLabel, run, store } from "../store.ts";
 
 const STATUS: Record<BatchStatus, [tone: string, label: string]> = {
   complete: ["ok", "Complete"],
@@ -54,7 +54,10 @@ async function undo(id: string) {
       <PageHeading title="History">
         Every batch is recorded so it can be put back.
         <template #actions>
-          <ActionButton :disabled="store.busy" @click="loadHistory">Refresh</ActionButton>
+          <div class="row">
+            <ActionButton :disabled="store.busy" @click="loadHistory">Refresh</ActionButton>
+            <ActionButton @click="resume">Back to {{ resumeLabel() }}</ActionButton>
+          </div>
         </template>
       </PageHeading>
     </div>
