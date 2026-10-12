@@ -33,6 +33,7 @@ export const store = reactive({
   queue: {
     groups: [],
     skipped: [],
+    unread: [],
     lookups: null,
   } as QueueState,
   settings: DEFAULT_SETTINGS as AppSettings,

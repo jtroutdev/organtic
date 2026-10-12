@@ -41,7 +41,10 @@ const LABELS: Record<Page, string> = {
 const KEYS: Page[] = ["review", "preview", "history", "settings"];
 const tabs: Page[] = ["history", "settings"];
 const empty = computed(
-  () => !store.queue.groups.length && !store.queue.skipped.length,
+  () =>
+    !store.queue.groups.length &&
+    !store.queue.skipped.length &&
+    !store.queue.unread.length,
 );
 // Matching has nothing to show for an empty queue, so it opens on adding files.
 const view = computed<Page>(() =>

@@ -107,6 +107,7 @@ const extensionOf = (value: string) =>
 export class Session {
   private files = new Map<string, MediaFile>();
   private excluded = new Set<string>();
+  private unread: QueueState["unread"] = [];
   private groups = new Map<string, Group>();
   private plan: { plan: Plan; fileIds: string[] } | null = null;
   private manualGroups = 0;
@@ -143,6 +144,7 @@ export class Session {
           source: relativeTo(file.path, file.root),
           reason: file.parsed.skip!,
         })),
+      unread: this.unread,
       lookups: this.run.total
         ? { done: this.run.done, total: this.run.total }
         : null,
@@ -255,6 +257,7 @@ export class Session {
 
   /** Adds scanned files and looks up matches for the groups they form or join. */
   async addFiles(scan: ScanResult): Promise<void> {
+    this.unread = scan.unread;
     const known = new Set([...this.files.values()].map((file) => file.path));
     const fresh = scan.files.filter((file) => !known.has(file.path));
     for (const file of fresh) {
@@ -387,6 +390,7 @@ export class Session {
     this.files.clear();
     this.groups.clear();
     this.excluded.clear();
+    this.unread = [];
     this.changed();
   }
 

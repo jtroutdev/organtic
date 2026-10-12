@@ -136,7 +136,9 @@ test("scanner excludes symlinks and unrelated files", async (t) => {
   }
   const result = await scanPaths([f.dir, f.source]);
   assert.equal(result.files.length, 1);
-  assert.equal(result.skipped.length, 1);
+  assert.deepEqual(result.unread, [
+    { path: path.join(f.dir, "link.mkv"), reason: "A link to another place; links are not followed" },
+  ]);
 });
 test("unchanged names can still create NFO, and an NFO already beside the video is kept", async (t) => {
   const f = await fixture(t);
@@ -343,6 +345,7 @@ test("an imported folder that is its title's own folder is renamed, not nested",
     type: "rename",
     source: root,
     target: path.join(lib.dir, "Severance (2022)"),
+    outcome: "done",
   });
   const undone = await undoBatch(plan.id, lib.journals);
   assert.deepEqual(undone.renamed, [{ from: path.join(lib.dir, "Severance (2022)"), to: root }]);

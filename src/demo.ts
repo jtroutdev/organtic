@@ -239,13 +239,46 @@ const planner: Planner = {
         type: op.type,
         source: op.type === "move" || op.type === "rename" ? op.source : undefined,
         target: op.target,
+        outcome: "done" as const,
       })),
     });
     return { id: plan.id, completed: plan.operations.length };
   },
 };
 
-const batches: BatchSummary[] = [];
+// One batch that stopped part-way, so History has every outcome to show.
+const STOPPED = `${ROOT}/Fargo (1996)`;
+const batches: BatchSummary[] = [
+  {
+    id: "example-interrupted",
+    createdAt: "2026-10-10T19:42:00.000Z",
+    count: 5,
+    status: "interrupted",
+    stopped: `The disk is full: ${STOPPED}/Fargo (1996).nfo`,
+    operations: [
+      { type: "mkdir", target: STOPPED, outcome: "done" },
+      {
+        type: "move",
+        source: `${ROOT}/Fargo.1996.1080p.BluRay-GRP/fargo.mkv`,
+        target: `${STOPPED}/Fargo (1996).mkv`,
+        outcome: "done",
+      },
+      {
+        type: "download",
+        target: `${STOPPED}/poster.jpg`,
+        outcome: "skipped",
+        message: "The image source could not be reached.",
+      },
+      {
+        type: "write",
+        target: `${STOPPED}/Fargo (1996).nfo`,
+        outcome: "failed",
+        message: `The disk is full: ${STOPPED}/Fargo (1996).nfo`,
+      },
+      { type: "rmdir", target: `${ROOT}/Fargo.1996.1080p.BluRay-GRP`, outcome: "pending" },
+    ],
+  },
+];
 const listeners: ((queue: QueueState) => void)[] = [];
 const providers = new Providers({ fetcher: catalogue });
 providers.setToken("example");
@@ -257,7 +290,13 @@ const session = new Session({
   settings,
   onChange: (queue) => listeners.forEach((listener) => listener(queue)),
 });
-const addExamples = () => session.addFiles({ files: exampleFiles(), skipped: [] });
+const addExamples = () => session.addFiles({
+    files: exampleFiles(),
+    unread: [
+      { path: `${ROOT}/Private`, reason: "Permission was denied" },
+      { path: `${ROOT}/Latest.mkv`, reason: "A link to another place; links are not followed" },
+    ],
+  });
 
 export const demoApi: MediaApi = {
   desktop: false,

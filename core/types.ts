@@ -241,12 +241,23 @@ export interface BatchSummary {
   createdAt: string;
   count: number;
   status: BatchStatus;
-  operations: { type: Operation["type"]; source?: string; target: string }[];
+  /** Why an interrupted batch stopped. */
+  stopped?: string;
+  operations: {
+    type: Operation["type"];
+    source?: string;
+    target: string;
+    /** `skipped` is artwork or a folder name the batch went on without; `pending` was never started. */
+    outcome: "done" | "failed" | "skipped" | "pending";
+    /** Why a change failed or was skipped. */
+    message?: string;
+  }[];
 }
 
 export interface ScanResult {
   files: MediaFile[];
-  skipped: string[];
+  /** Files, folders and links the import could not or would not read, each with why. */
+  unread: { path: string; reason: string }[];
 }
 
 // ---- Queue, preview and settings as the interface sees them ----
@@ -331,6 +342,8 @@ export interface OrderingChoice {
 export interface QueueState {
   groups: QueueGroup[];
   skipped: { id: string; source: string; reason: SkipReason }[];
+  /** What the last import could not read. */
+  unread: ScanResult["unread"];
   /** Progress of the lookups started by adding files; null when none are running. */
   lookups: { done: number; total: number } | null;
 }

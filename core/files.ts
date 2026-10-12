@@ -88,12 +88,42 @@ export function isArtworkUrl(value: unknown): value is string {
 }
 
 const key = (name: string) => name.normalize("NFC").toLowerCase();
-const messageOf = (error: unknown) =>
-  error instanceof Error ? error.message : String(error);
 const codeOf = (error: unknown) =>
   error && typeof error === "object" && "code" in error
     ? String(error.code)
     : "";
+// What the system's own error codes mean to someone looking at their files.
+const PLAIN: Record<string, string> = {
+  ENOSPC: "The disk is full",
+  EDQUOT: "The disk quota is used up",
+  EROFS: "The disk is read-only",
+  EACCES: "Permission was denied",
+  EPERM: "The system did not allow it",
+  EBUSY: "It is in use by another program",
+  ETXTBSY: "It is in use by another program",
+  ENOENT: "It is no longer there",
+  ENOTDIR: "Part of the path is not a folder",
+  EISDIR: "A folder is in the way",
+  EEXIST: "Something with that name is already there",
+  ENOTEMPTY: "The folder is not empty",
+  ENAMETOOLONG: "The path is too long",
+  EIO: "The disk reported a read or write error",
+  ENXIO: "The drive is no longer connected",
+  ENODEV: "The drive is no longer connected",
+  EMFILE: "Too many files are open",
+  ENFILE: "Too many files are open",
+  ETIMEDOUT: "The drive took too long to answer",
+};
+/** A failure in plain words, with the path it concerns when the system names one. */
+export function messageOf(error: unknown): string {
+  const plain = PLAIN[codeOf(error)];
+  if (!plain) return error instanceof Error ? error.message : String(error);
+  const where =
+    error && typeof error === "object" && "path" in error && typeof error.path === "string"
+      ? error.path
+      : "";
+  return where ? `${plain}: ${where}` : `${plain}.`;
+}
 const exists = async (p: string) => {
   try {
     return await fs.lstat(p);
@@ -128,8 +158,17 @@ const same = (stat: Stats | null, expected: Fingerprint) =>
 
 export async function scanPaths(paths: string[]): Promise<ScanResult> {
   const files: MediaFile[] = [],
-    skipped: string[] = [];
+    unread: ScanResult["unread"] = [];
   const visited = new Set<string>();
+  /** Runs one read; a failure is noted against the path and the rest of the import carries on. */
+  async function reading<T>(where: string, read: () => Promise<T>): Promise<T | undefined> {
+    try {
+      return await read();
+    } catch (error) {
+      unread.push({ path: where, reason: PLAIN[codeOf(error)] ?? messageOf(error) });
+      return undefined;
+    }
+  }
   async function visit(input: string, root: string) {
     const absolute = path.resolve(input);
     if (visited.has(absolute)) return;
@@ -138,13 +177,14 @@ export async function scanPaths(paths: string[]): Promise<ScanResult> {
       throw new Error(
         "Import is limited to 20,000 entries. Choose a smaller folder.",
       );
-    const stat = await fs.lstat(absolute);
+    const stat = await reading(absolute, () => fs.lstat(absolute));
+    if (!stat) return;
     if (stat.isSymbolicLink()) {
-      skipped.push(absolute);
+      unread.push({ path: absolute, reason: "A link to another place; links are not followed" });
       return;
     }
     if (stat.isDirectory()) {
-      for (const entry of await fs.readdir(absolute)) {
+      for (const entry of (await reading(absolute, () => fs.readdir(absolute))) ?? []) {
         if (!entry.startsWith("."))
           await visit(path.join(absolute, entry), root);
       }
@@ -153,10 +193,9 @@ export async function scanPaths(paths: string[]): Promise<ScanResult> {
       VIDEO_EXTENSIONS.includes(path.extname(absolute).slice(1).toLowerCase())
     ) {
       // Canonicalize the parent so alternate directory aliases cannot create duplicate operations.
-      const canonical = path.join(
-        await fs.realpath(path.dirname(absolute)),
-        path.basename(absolute),
-      );
+      const parent = await reading(absolute, () => fs.realpath(path.dirname(absolute)));
+      if (parent === undefined) return;
+      const canonical = path.join(parent, path.basename(absolute));
       if (!files.some((file) => file.path === canonical))
         files.push({
           id: randomUUID(),
@@ -170,14 +209,15 @@ export async function scanPaths(paths: string[]): Promise<ScanResult> {
   }
   for (const input of paths) {
     const absolute = path.resolve(input);
-    const stat = await fs.lstat(absolute);
     // A chosen folder is the root its contents are organised within; a chosen file uses its own folder.
-    await visit(
-      absolute,
-      await fs.realpath(stat.isDirectory() ? absolute : path.dirname(absolute)),
+    const root = await reading(absolute, async () =>
+      fs.realpath(
+        (await fs.lstat(absolute)).isDirectory() ? absolute : path.dirname(absolute),
+      ),
     );
+    if (root !== undefined) await visit(absolute, root);
   }
-  return { files: files.sort((a, b) => a.path.localeCompare(b.path)), skipped };
+  return { files: files.sort((a, b) => a.path.localeCompare(b.path)), unread };
 }
 
 /**
@@ -798,6 +838,84 @@ async function noReplaceMove(op: Omit<MoveOperation, "type">, io: FileOps) {
   await fs.unlink(op.source);
 }
 
+/** What `checkRoom` asks the system; tests replace these to stand in for a full or read-only disk. */
+export type RoomProbe = Pick<typeof fs, "statfs" | "access">;
+// A poster or backdrop is usually well under this; the real size is not known until it arrives.
+const ARTWORK_ROOM = 2 * 1024 * 1024;
+const megabytes = (bytes: number) =>
+  bytes < 1024 * 1024 ? "under 1 MB" : `${Math.ceil(bytes / (1024 * 1024))} MB`;
+
+/**
+ * Reasons a plan cannot be carried out where it is headed, found without changing a file:
+ * a folder that cannot be written to, or a disk without room for what the batch writes.
+ * Moves stay on one disk and take no room; NFO files, artwork and the history record do.
+ */
+export async function checkRoom(
+  plan: Plan,
+  journalDir: string,
+  probe: RoomProbe = fs,
+): Promise<string[]> {
+  const problems: string[] = [];
+  try {
+    await fs.mkdir(journalDir, { recursive: true, mode: 0o700 });
+  } catch (error) {
+    return [`The history folder cannot be created, so the batch could not be undone. ${messageOf(error)}`];
+  }
+  // The folder each change lands in, as far as it exists yet, with the bytes written there.
+  const needs = new Map<string, number>();
+  const need = async (folder: string, bytes: number) => {
+    let existing = folder;
+    while (!(await exists(existing)) && path.dirname(existing) !== existing)
+      existing = path.dirname(existing);
+    needs.set(existing, (needs.get(existing) ?? 0) + bytes);
+  };
+  // The plan is written to the record once, and each change adds a line or two.
+  await need(journalDir, Buffer.byteLength(JSON.stringify(plan)) + plan.operations.length * 128);
+  for (const op of plan.operations) {
+    if (op.type === "rmdir") continue;
+    await need(
+      path.dirname(op.target),
+      op.type === "write"
+        ? Buffer.byteLength(op.content)
+        : op.type === "download"
+          ? ARTWORK_ROOM
+          : 0,
+    );
+    // Taking a file out of its folder changes that folder too.
+    if (op.type === "move" || op.type === "rename") await need(path.dirname(op.source), 0);
+  }
+  const disks = new Map<string, { folder: string; bytes: number; free: number }>();
+  for (const [folder, bytes] of needs) {
+    const what = folder === journalDir ? "The history folder" : folder;
+    try {
+      await probe.access(folder, fs.constants.W_OK);
+    } catch (error) {
+      problems.push(
+        codeOf(error) === "EROFS"
+          ? `${what} is on a read-only disk.`
+          : `${what} cannot be changed. ${messageOf(error)}`,
+      );
+      continue;
+    }
+    try {
+      const [space, stat] = await Promise.all([probe.statfs(folder), fs.stat(folder)]);
+      // Some network and virtual drives report no size at all; nothing can be said about those.
+      if (!space.blocks) continue;
+      const disk = disks.get(String(stat.dev)) ?? { folder: what, bytes: 0, free: space.bavail * space.bsize };
+      disk.bytes += bytes;
+      disks.set(String(stat.dev), disk);
+    } catch {
+      // A drive that cannot report its free space is left for the batch itself to find out.
+    }
+  }
+  for (const disk of disks.values())
+    if (disk.bytes > disk.free)
+      problems.push(
+        `Not enough room on the disk holding ${disk.folder}: this batch writes about ${megabytes(disk.bytes)} and ${megabytes(disk.free)} is free.`,
+      );
+  return problems;
+}
+
 export async function applyPlan(
   plan: Plan,
   journalDir: string,
@@ -821,7 +939,8 @@ export async function applyPlan(
     )
       throw new Error("A destination now exists. Generate a fresh preview.");
   }
-  await fs.mkdir(journalDir, { recursive: true, mode: 0o700 });
+  const [blocked] = await checkRoom(plan, journalDir);
+  if (blocked) throw new Error(blocked);
   const journal = path.join(journalDir, `${plan.id}.jsonl`);
   await fs.writeFile(journal, "", { flag: "wx", mode: 0o600 });
   await append(journal, { type: "plan", plan });
@@ -942,20 +1061,40 @@ export async function history(journalDir: string): Promise<BatchSummary[]> {
   )) {
     try {
       const { plan, events } = await readJournal(path.join(journalDir, name));
+      const finished = events.some((e) => e.type === "complete");
+      const failed = events.find((e) => e.type === "failed");
+      // Without a recorded failure the app itself stopped: closed, crashed, or lost power.
+      const stop = finished
+        ? undefined
+        : failed?.type === "failed"
+          ? failed.message
+          : "The app closed before the batch finished.";
+      const started = indexesOf(events, "intent");
+      const outcomeOf = (index: number): Pick<BatchSummary["operations"][number], "outcome" | "message"> => {
+        const last = events.findLast(
+          (e) => (e.type === "done" || e.type === "skipped") && e.index === index,
+        );
+        if (last?.type === "done") return { outcome: "done" };
+        if (last?.type === "skipped") return { outcome: "skipped", message: last.message };
+        if (!started.has(index)) return { outcome: "pending" };
+        return { outcome: "failed", message: stop ?? "" };
+      };
       result.push({
         id: plan.id,
         createdAt: plan.createdAt,
         count: plan.operations.length,
         status: events.some((e) => e.type === "undone")
           ? "undone"
-          : events.some((e) => e.type === "complete")
+          : finished
             ? "complete"
             : "interrupted",
-        operations: plan.operations.map((op) => ({
+        ...(stop === undefined ? {} : { stopped: stop }),
+        operations: plan.operations.map((op, index) => ({
           source:
             op.type === "move" || op.type === "rename" ? op.source : undefined,
           target: op.target,
           type: op.type,
+          ...outcomeOf(index),
         })),
       });
     } catch {

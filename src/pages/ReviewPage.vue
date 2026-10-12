@@ -550,8 +550,20 @@ async function search() {
             />
           </div>
         </template>
-        <template v-if="store.queue.skipped.length" #foot>
-          <details>
+        <template v-if="store.queue.skipped.length || store.queue.unread.length" #foot>
+          <!-- Sharing a name opens one at a time, so the queue above keeps its room. -->
+          <details v-if="store.queue.unread.length" name="aside">
+            <summary>
+              {{ plural(store.queue.unread.length, "item") }} could not be read
+            </summary>
+            <div class="scroll capped skipped">
+              <div v-for="item in store.queue.unread" :key="item.path">
+                <span class="mono">{{ item.path }}</span>
+                <IssueText>{{ item.reason }}</IssueText>
+              </div>
+            </div>
+          </details>
+          <details v-if="store.queue.skipped.length" name="aside">
             <summary>
               {{ plural(store.queue.skipped.length, "file") }} set aside as samples
               or extras
