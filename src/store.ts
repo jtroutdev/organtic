@@ -42,6 +42,8 @@ export const store = reactive({
   filter: "all" as Filter,
   selected: null as string | null,
   preview: null as PreviewState | null,
+  /** A preview is being built. With none to show yet, the page draws its outline instead. */
+  previewLoading: false,
   previewSelected: null as string | null,
   applied: null as {
     completed: number;
@@ -132,16 +134,22 @@ export async function run<T>(action: () => Promise<T>): Promise<T | undefined> {
   }
 }
 
+/** Previews being built: a change to the queue can ask for another before the last is back. */
+let loads = 0;
 async function loadPreview() {
   if (!confirmed().length) {
     store.preview = null;
     return;
   }
+  loads++;
+  store.previewLoading = true;
   try {
     store.preview = await api.preview();
   } catch (error) {
     store.preview = null;
     store.error = error instanceof Error ? error.message : String(error);
+  } finally {
+    if (!--loads) store.previewLoading = false;
   }
 }
 
