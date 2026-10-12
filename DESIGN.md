@@ -392,6 +392,8 @@ Two selection idioms, never mixed: the **accent tint with a 1px accent edge** ma
 
 **Banner.** One sentence and at most one default button, above the page.
 
+**Note.** How a group was read and matched, in `body-sm` on the soft fill of the group's status tone, with the banner's radius and padding and no button. It takes a line of its own, as wide as the pane's content.
+
 **Match card.** Poster, title, year, fit and actions. The chosen card takes the accent edge and tint.
 
 **File row.** Before and after side by side in mono. The problem being worked on is tinted warning soft from edge to edge.
