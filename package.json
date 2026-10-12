@@ -69,5 +69,8 @@
   },
   "engines": {
     "node": ">=24.0.0"
+  },
+  "overrides": {
+    "global-agent": "^4.1.3"
   }
 }
