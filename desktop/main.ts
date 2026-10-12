@@ -17,6 +17,7 @@ import {
   scanPaths,
   createPlan,
   applyPlan,
+  checkRoom,
   history,
   onSameDrive,
   undoBatch,
@@ -118,7 +119,19 @@ async function start() {
   const session = new Session({
     providers,
     settings,
-    planner: { createPlan, applyPlan: (plan) => applyPlan(plan, journalDir) },
+    planner: {
+      // The preview also says when the batch has nowhere to go: a read-only or full disk.
+      createPlan: async (selections, options) => {
+        const plan = await createPlan(selections, options);
+        if (plan.operations.length)
+          for (const message of await checkRoom(plan, journalDir)) {
+            plan.errors.push(message);
+            plan.issues.push({ message });
+          }
+        return plan;
+      },
+      applyPlan: (plan) => applyPlan(plan, journalDir),
+    },
     onChange: (queue) => mainWindow?.webContents.send("media:queue", queue),
   });
 

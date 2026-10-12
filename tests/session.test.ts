@@ -182,7 +182,21 @@ test("choosing, searching again and changing settings update the queue", async (
   session.remove(group("Solaris").key);
   assert.equal(session.state().groups.length, 1);
   session.clear();
-  assert.deepEqual(session.state(), { groups: [], skipped: [], lookups: null });
+  assert.deepEqual(session.state(), { groups: [], skipped: [], unread: [], lookups: null });
+});
+
+test("the queue lists what the last import could not read, until the next import or a clear", async (t) => {
+  const { session } = await setup(t, ["in/Arrival.2016.mkv"]);
+  assert.deepEqual(session.state().unread, []);
+  const unread = [{ path: "/films/Private", reason: "Permission was denied" }];
+  await session.addFiles({ files: [], unread });
+  assert.deepEqual(session.state().unread, unread);
+  assert.ok(session.state().groups.length > 0);
+  await session.addFiles({ files: [], unread: [] });
+  assert.deepEqual(session.state().unread, []);
+  await session.addFiles({ files: [], unread });
+  session.clear();
+  assert.deepEqual(session.state().unread, []);
 });
 
 test("films need a TMDB token, extras can be included, and the destination can change", async (t) => {

@@ -34,11 +34,35 @@ const root = computed(() =>
 );
 const short = (path: string) =>
   root.value && path.startsWith(root.value) ? path.slice(root.value.length) : path;
+/** A message with its paths shortened the same way. */
+const within = (message: string) =>
+  root.value ? message.replaceAll(root.value, "") : message;
 const KINDS = {
   mkdir: "new folder",
   rmdir: "removed empty folder",
   download: "downloaded artwork",
 };
+type Change = (typeof store.batches)[number]["operations"][number];
+const OUTCOME: Record<Change["outcome"], [tone: string, label: string]> = {
+  done: ["ok", "Done"],
+  failed: ["bad", "Failed"],
+  skipped: ["warn", "Skipped"],
+  pending: ["off", "Not started"],
+};
+// A batch where everything went through has nothing to tell apart, so its rows stay plain.
+const mixed = computed(
+  () => batch.value?.operations.some((op) => op.outcome !== "done") ?? false,
+);
+const tally = computed(() => {
+  const counts = Object.groupBy(batch.value?.operations ?? [], (op) => op.outcome);
+  return (["done", "failed", "skipped", "pending"] as const)
+    .filter((outcome) => counts[outcome]?.length)
+    .map((outcome) => `${counts[outcome]!.length} ${OUTCOME[outcome][1].toLowerCase()}`)
+    .join(", ");
+});
+// The reason is given once, in the banner; the row that failed carries it only if it differs.
+const reasonOf = (op: Change) =>
+  op.message && op.message !== batch.value?.stopped ? within(op.message) : undefined;
 const when = (value: string) =>
   value ? new Date(value).toLocaleString() : "Unreadable record";
 async function undo(id: string) {
@@ -89,8 +113,9 @@ async function undo(id: string) {
         >
       </p>
       <NoticeBanner v-if="batch.status === 'interrupted'" tone="bad"
-        >This batch stopped before it finished. Some files have their new
-        names and some do not. Undo puts the renamed ones back.</NoticeBanner
+        ><b v-if="batch.stopped">{{ within(batch.stopped).replace(/[^.!?]$/, "$&.") }}</b> This batch
+        stopped before it finished: {{ tally }}. Undo puts back what was
+        done.</NoticeBanner
       >
       <NoticeBanner v-if="batch.status === 'damaged'" tone="bad"
         >This record could not be read, so the batch cannot be undone from
@@ -106,6 +131,8 @@ async function undo(id: string) {
               :before-tip="op.source"
               :after="short(op.target)"
               :after-tip="op.target"
+              :outcome="mixed ? OUTCOME[op.outcome] : undefined"
+              :reason="reasonOf(op)"
               renamed
             />
             <ChangeRow
@@ -113,6 +140,8 @@ async function undo(id: string) {
               :before="KINDS[op.type as keyof typeof KINDS] ?? 'new metadata file'"
               :after="short(op.target)"
               :after-tip="op.target"
+              :outcome="mixed ? OUTCOME[op.outcome] : undefined"
+              :reason="reasonOf(op)"
             />
           </template>
           <p v-if="batch.operations.length > LIMIT" class="muted more">

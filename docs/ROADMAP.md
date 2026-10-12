@@ -27,6 +27,7 @@
 - [x] Keyboard shortcuts and an automated accessibility audit with no violations
 - [x] Generated-name tests for parsing and naming, and apply and undo stopped at every step and journal record
 - [x] Packaging-tool advisories cleared; the full dependency audit is clean
+- [x] Failures made plain: what an import could not read, what became of each change in a batch that stopped and why, and a check for a read-only or full disk before anything moves
 - [x] Optional poster, backdrop and season poster downloads
 - [x] Moving existing NFO files and artwork with their video, folder or show
 - [x] DVD and other alternate episode orderings
@@ -45,7 +46,6 @@
 - Execute Windows/macOS/Linux CI and native integration tests on representative local, network, and removable filesystems
 - Validate Kodi/Plex/Jellyfin names and metadata against real libraries
 - Validate native file dialogs, screen readers, focus order, keyboard-only flow, high-DPI rendering, and large libraries
-- Make retryable failures, scan errors, partial recovery, and disk-space conditions easier to inspect
 - Application icon, chosen product name, signing/notarization, release checksums, update strategy, contribution/security policies
 - Re-review metadata provider terms, attribution, image rights, bundled dependency licenses, and logo use before distributing
 

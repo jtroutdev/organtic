@@ -113,7 +113,7 @@ for (const links of [true, false]) {
       const before = await snapshot(lib.dir);
       await assert.rejects(
         applyPlan(lib.plan, lib.journals, failingOn(call, links)),
-        new RegExp(`Stopped after \\d+ operations: input/output error`),
+        /Stopped after \d+ operations: The disk reported a read or write error/,
         `move ${call}`,
       );
       assert.equal(await statusOf(lib.journals), "interrupted", `move ${call}`);
