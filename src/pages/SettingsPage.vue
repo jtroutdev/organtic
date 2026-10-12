@@ -190,7 +190,7 @@ const sections = computed<[string, string, string, string][]>(() => [
             </button>
           </div>
         </div>
-        <template v-for="[key, label] in fields" :key="key">
+        <div v-for="[key, label] in fields" :key="key" class="stack">
           <label class="field"
             >{{ label }} template
             <input
@@ -209,7 +209,7 @@ const sections = computed<[string, string, string, string][]>(() => [
             }}</span>
             <template v-else>{{ example(key) }}</template>
           </div>
-        </template>
+        </div>
         <div v-if="preset === 'custom'" class="row">
           <button
             class="btn primary"

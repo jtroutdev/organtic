@@ -119,7 +119,10 @@ spacing:
   xl: 24px
   2xl: 32px
   3xl: 40px
-  gutter: 16px
+  page: 24px
+  surface: 16px
+  nested: 8px
+  dense: 4px
   control: 32px
   control-sm: 24px
 components:
@@ -194,7 +197,7 @@ components:
     backgroundColor: "{colors.surface-raised}"
     textColor: "{colors.on-surface}"
     typography: "{typography.body-md}"
-    padding: 8px 12px
+    padding: 8px 16px
   list-item-current:
     backgroundColor: "{colors.accent-soft}"
     textColor: "{colors.on-surface}"
@@ -238,17 +241,17 @@ components:
     backgroundColor: "{colors.error-soft}"
     textColor: "{colors.error}"
     rounded: "{rounded.md}"
-    padding: 8px 12px
+    padding: 8px 16px
   banner-success:
     backgroundColor: "{colors.success-soft}"
     textColor: "{colors.success}"
     rounded: "{rounded.md}"
-    padding: 8px 12px
+    padding: 8px 16px
   banner-ask:
     backgroundColor: "{colors.accent-soft}"
     textColor: "{colors.on-surface}"
     rounded: "{rounded.md}"
-    padding: 8px 12px
+    padding: 8px 16px
   panel:
     backgroundColor: "{colors.surface-raised}"
     textColor: "{colors.on-surface}"
@@ -335,13 +338,22 @@ Weight carries state in two places only: the current step and the active list vi
 
 Spacing is a scale on a base of 4: 2, 4, 8, 12, 16, 24, 32, 40. When a design calls for a value between two steps, round down on the vertical axis and up on the horizontal one.
 
-Page structure and scroll regions are built with CSS grid and `overflow`. Flex is for content flow inside a component: a wrapping row of buttons, a run of pills. The region that fills takes `minmax(0, 1fr)`; the list inside it scrolls.
+Space follows density: the deeper something is nested, the closer it sits to its neighbours. Four steps of the scale carry this, each with a name of its own.
+
+- `page` 24px is the top level: the padding of the window and the gap between the blocks of a page (notices, heading, split, footer).
+- `surface` 16px is the default inside a surface: the padding of a panel, pane, card or dialog and the gap between its sections.
+- `nested` 8px is anything further in: the controls of a row, the parts of a section, a field and its example.
+- `dense` 4px is the exception: a tight cluster of buttons or tabs, a label and the thing it names, the two lines of a list item.
+
+The gap between things and the padding of a container use one of these four. The plain scale (12px in a button or input, 2px in a pill) is for the inside of a control. Space comes from `gap` first, then `padding`. Margin is not used for spacing; the stylesheet clears the browser's own margins once and sets none. Something that runs edge to edge inside a padded pane spans the pane's full-width grid column and pads itself, in place of a negative margin.
+
+Page structure and scroll regions are built with CSS grid and `overflow`, as are the header, page heading, footer, banner and field. Flex is for content flow inside a component: a wrapping row of buttons, a run of pills. The region that fills takes `minmax(0, 1fr)`; the list inside it scrolls.
 
 Every screen is the same split: a list between 220 and 300px wide on the left, the selected item on the right. Content is never capped in width. Below 760px the split stacks.
 
-The gutter is 16px. Every control is 32px tall: buttons, inputs, tabs, steps, segmented sets, list view tabs and option rows. A compact 24px button exists for use inside a table row and nowhere else.
+Every control is 32px tall: buttons, inputs, tabs, steps, segmented sets, list view tabs and option rows. A compact 24px button exists for use inside a table row and nowhere else.
 
-Wizard steps (Add files, Review, Preview, Done) end in a footer: the destructive or back action on the left, a secondary action second from the right, the step's one primary action on the far right. History and Settings keep their actions at the top.
+Wizard steps (Add files, Review, Preview, Done) end in a footer, set off by the page gap and no rule: the destructive or back action on the left, a secondary action second from the right, the step's one primary action on the far right. History and Settings keep their actions at the top.
 
 ## Elevation & Depth
 
