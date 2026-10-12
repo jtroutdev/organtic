@@ -15,7 +15,7 @@ npm start
 
 ```sh
 npm test          # Core tests using temporary files; no personal media
-npm run typecheck # Type-check the core, desktop layer and tests
+npm run typecheck # Type-check the core, desktop layer, tests and Vue components
 npm run build     # Build the interface and compile the desktop code
 npm run package   # Unpacked desktop build for the current platform
 npm run dist      # Installer for the current platform
