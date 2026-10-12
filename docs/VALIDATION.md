@@ -34,4 +34,4 @@
 
 ## Dependency audit
 
-`npm audit --omit=dev` reports zero advisories with the current dependencies. The packaging toolchain carried moderate advisories through electron-builder ([GHSA-hp3w-g68c-fv3c](https://github.com/advisories/GHSA-hp3w-g68c-fv3c)) in the initial version; the full audit including development dependencies has not been re-run since.
+`npm audit` reports zero advisories, development dependencies included (run 2026-10-12). The packaging toolchain carried one moderate advisory, [GHSA-hp3w-g68c-fv3c](https://github.com/advisories/GHSA-hp3w-g68c-fv3c) in sprintf-js, which has no fixed release. It arrived through electron-builder's copy of `@electron/get`, whose optional proxy helper `global-agent` 3 logs with it. `overrides` in `package.json` pins `global-agent` to version 4, which no longer depends on it; remove the override once electron-builder ships an `@electron/get` that does not need it. None of this is in the packaged app.
