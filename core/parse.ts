@@ -73,6 +73,13 @@ const EPISODE_ONLY =
 // A day in year-month-day order, as daily shows are named: 2024.03.15, 2024-03-15.
 const AIR_DATE =
   /\b((?:19|20)\d{2})[ \-](0[1-9]|1[0-2])[ \-](0[1-9]|[12]\d|3[01])\b/;
+/** The date a name gives, unless the calendar has no such day (30 February, 31 April). */
+function airDateIn(text: string): RegExpExecArray | null {
+  const dated = AIR_DATE.exec(text);
+  if (!dated) return null;
+  const [year, month, day] = [Number(dated[1]), Number(dated[2]), Number(dated[3])];
+  return day <= new Date(Date.UTC(year, month, 0)).getUTCDate() ? dated : null;
+}
 // A special by its own number: "Show - OVA 2", "[Group] Show SP1". Read as season 0.
 const SPECIAL = /\b(?:SP|Special|OVA|OAD) ?(\d{1,3})\b/i;
 // "Special 26" is also a film, so without a fansub tag only a " - " before it marks a special.
@@ -187,8 +194,8 @@ export function parseStem(stem: string): ParsedName {
     const range = SEASON_RANGE.exec(text)!;
     markerIndex = range.index;
     markerEnd = endOf(range);
-  } else if (AIR_DATE.test(text)) {
-    const dated = AIR_DATE.exec(text)!;
+  } else if (airDateIn(text)) {
+    const dated = airDateIn(text)!;
     airDate = `${dated[1]}-${dated[2]}-${dated[3]}`;
     markerIndex = dated.index;
     markerEnd = endOf(dated);
