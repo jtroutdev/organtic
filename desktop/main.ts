@@ -18,6 +18,7 @@ import {
   createPlan,
   applyPlan,
   history,
+  onSameDrive,
   undoBatch,
 } from "../core/files.ts";
 import { Session } from "../core/session.ts";
@@ -232,7 +233,9 @@ async function start() {
   register("setEpisode", (fileId, numbers) =>
     session.setEpisode(fileId, numbers),
   );
-  register("chooseDestination", async () => {
+  register("chooseDestination", async (key) => {
+    const group = session.state().groups.find((item) => item.key === key);
+    if (!group) throw new Error("That group is no longer in the queue.");
     const result = await dialog.showOpenDialog(mainWindow!, {
       title: "Organise inside this folder",
       defaultPath: lastFolder,
@@ -240,10 +243,16 @@ async function start() {
     });
     const [folder] = result.filePaths;
     if (result.canceled || !folder) return;
+    const chosen = await fs.realpath(folder);
+    // Refused here, not when the batch is applied and some of it has already moved.
+    if (!(await onSameDrive(chosen, group.files.map((file) => file.path))))
+      throw new Error(
+        `"${chosen}" is on a different drive from this group's files, and files are not moved between drives. Choose a folder on the same drive.`,
+      );
     await remember(folder);
-    session.setDestination(await fs.realpath(folder));
+    session.setDestination(key, chosen);
   });
-  register("resetDestination", async () => session.setDestination(null));
+  register("resetDestination", async (key) => session.setDestination(key, null));
   register("preview", () => session.preview());
   register("apply", (id) =>
     exclusive(async () => {

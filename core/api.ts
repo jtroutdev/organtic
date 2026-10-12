@@ -45,8 +45,10 @@ export interface MediaApi {
   setOrdering(key: string, id: string | null, keepNumbers: boolean): Promise<void>;
   /** Moves files to another group, or to a new one when `targetKey` is null; resolves to that group's key. */
   moveFiles(fileIds: string[], targetKey: string | null): Promise<string>;
-  chooseDestination(): Promise<void>;
-  resetDestination(): Promise<void>;
+  /** Asks for the folder one group is organised inside. */
+  chooseDestination(key: string): Promise<void>;
+  /** Puts a group back in the folder its files were added from. */
+  resetDestination(key: string): Promise<void>;
   preview(): Promise<PreviewState>;
   apply(
     planId: string,

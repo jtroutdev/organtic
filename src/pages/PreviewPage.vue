@@ -33,9 +33,13 @@ const group = computed(() => {
     groups[0]
   );
 });
+/** The selected group as queued, which is where its destination is chosen. */
+const queued = computed(() =>
+  store.queue.groups.find((item) => item.key === group.value?.key),
+);
 // The destination is named once: beside its Change button when it can be changed.
 const shownAbove = computed(
-  () => store.settings.organize && preview.value?.destination === store.queue.destination,
+  () => store.settings.organize && group.value?.destination === queued.value?.destination,
 );
 const clashes = computed(
   () =>
@@ -117,8 +121,11 @@ async function toggle(key: string, box: HTMLInputElement) {
       <div class="above">
         <PageHeading title="Changes applied">
           {{ store.applied.completed }} operations completed inside
-          <span class="mono">{{ store.applied.destination }}</span
-          >.
+          <template v-if="store.applied.destinations.length === 1"
+            ><span class="mono">{{ store.applied.destinations[0] }}</span
+            >.</template
+          >
+          <template v-else>{{ store.applied.destinations.length }} folders.</template>
         </PageHeading>
         <NoticeBanner tone="ok"
           >Everything moved. The original names are kept in History.</NoticeBanner
@@ -227,17 +234,20 @@ async function toggle(key: string, box: HTMLInputElement) {
             {{ group.title }}
             <span class="muted">({{ group.year ?? "year unknown" }})</span>
           </GroupHeading>
-          <div v-if="store.settings.organize" class="dest">
+          <div v-if="store.settings.organize && queued" class="dest">
             <span class="label">Organise inside</span>
-            <span class="mono">{{ store.queue.destination }}</span>
+            <span class="mono">{{ queued.destination }}</span>
             <ActionButton
-              v-if="store.queue.destinationChanged"
+              v-if="queued.destinationChanged"
               :disabled="store.busy"
-              @click="run(api.resetDestination)"
+              @click="run(() => api.resetDestination(queued!.key))"
             >
               Use the added folder
             </ActionButton>
-            <ActionButton :disabled="store.busy" @click="run(api.chooseDestination)">
+            <ActionButton
+              :disabled="store.busy"
+              @click="run(() => api.chooseDestination(queued!.key))"
+            >
               Change
             </ActionButton>
           </div>
@@ -258,7 +268,7 @@ async function toggle(key: string, box: HTMLInputElement) {
         </div>
         <div v-else class="fill">
           <h3 class="label">
-            {{ shownAbove ? "New location" : `Inside ${preview?.destination}` }}
+            {{ shownAbove ? "New location" : `Inside ${group.destination}` }}
           </h3>
           <div class="tree scroll" role="list">
             <span v-if="!rows.length" class="muted"

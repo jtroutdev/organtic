@@ -9,6 +9,7 @@ import {
   createPlan,
   applyPlan,
   undoBatch,
+  onSameDrive,
   history,
 } from "../core/files.ts";
 import type { Media, PlanOptions, Selection } from "../core/types.ts";
@@ -840,4 +841,13 @@ test("a show's own files follow it only when the whole show is reorganised", asy
   // Turned off, show files stay put.
   const without = await createPlan(selections, { sidecars: false });
   assert.ok(!without.operations.some((op) => op.type === "move" && /tvshow|poster|fanart|banner/.test(op.target)));
+});
+
+test("a folder on another drive is told apart from one on the same drive", async (t) => {
+  const f = await fixture(t);
+  assert.equal(await onSameDrive(f.dir, [f.file!.path, path.join(f.dir, "gone.mkv")]), true);
+  // Needs a second filesystem to compare with; /dev/shm is one on most Linux systems.
+  const other = await fs.stat("/dev/shm").catch(() => null);
+  if (!other || other.dev === (await fs.stat(f.dir)).dev) return t.skip("no second drive here");
+  assert.equal(await onSameDrive("/dev/shm", [f.file!.path]), false);
 });
