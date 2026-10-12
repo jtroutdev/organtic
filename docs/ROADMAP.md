@@ -31,12 +31,12 @@
 - [x] Episodes named by air date
 - [x] Kitsu as an anime provider, and anime title lookup for the other sources
 - [x] Kitsu entries placed in their TMDB or TVDB season from a community mapping list, under one folder per show, with per-episode exceptions and the entry's own specials, numbered as TMDB or TVDB lists them, with special titles from TMDB or TVDB
+- [x] Type-checking of Vue templates and component scripts (vue-tsc, run on TypeScript 6 beside the project's TypeScript 7)
 
 ## Next
 
 - Getting an answer from the anime mapping lists' maintainers on terms of use (findings so far are in THIRD_PARTY_NOTICES.md)
 - Screen reader and keyboard-only testing by people who rely on them; high-contrast mode review
-- Type-checking of Vue templates (vue-tsc does not yet support the TypeScript version in use)
 
 ## Before a public stable release
 

@@ -138,10 +138,11 @@ async function showDetails(id: string) {
   await nextTick();
   details.value?.open();
 }
+const choose = (index: number) => run(() => api.choose(group.value!.key, index));
 async function useDetailed() {
   const index = detailedAt.value;
   details.value?.close();
-  if (index >= 0) await run(() => api.choose(group.value!.key, index));
+  if (index >= 0) await choose(index);
   await focusOn(".detail");
 }
 // How the group was read and why this match was offered.
@@ -429,6 +430,7 @@ async function onward(fileId: string) {
   closeEdit(fileId);
   announce("No problems left in this group.");
 }
+const includeAgain = (fileId: string) => run(() => api.exclude(fileId, false));
 async function leaveOut(fileId: string) {
   if (store.busy) return;
   await run(() => api.exclude(fileId, true));
@@ -758,7 +760,7 @@ async function search() {
                   :chosen="group.chosen === index"
                   :confirmed="group.status === 'confirmed'"
                   :disabled="busy"
-                  @use="run(() => api.choose(group!.key, index))"
+                  @use="choose(index)"
                   @details="showDetails(idOf(candidate))"
                 />
               </div>
@@ -865,7 +867,7 @@ async function search() {
                 <FilePath :path="file.source" :tip="file.path" muted />
                 <span v-if="file.excluded"
                   ><span class="muted">Left out of the next batch. </span>
-                  <ActionButton @click="run(() => api.exclude(file.id, false))">
+                  <ActionButton @click="includeAgain(file.id)">
                     Include again
                   </ActionButton></span
                 >

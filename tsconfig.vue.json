@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "rewriteRelativeImportExtensions": false
+  },
+  "include": ["src/**/*.ts", "src/**/*.vue", "core/api.ts"]
+}

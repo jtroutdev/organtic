@@ -37,6 +37,9 @@ const group = computed(() => {
 const queued = computed(() =>
   store.queue.groups.find((item) => item.key === group.value?.key),
 );
+const resetDestination = (key: string) => run(() => api.resetDestination(key));
+const chooseDestination = (key: string) => run(() => api.chooseDestination(key));
+const leaveOut = (fileId: string) => run(() => api.exclude(fileId, true));
 // The destination is named once: beside its Change button when it can be changed.
 const shownAbove = computed(
   () => store.settings.organize && group.value?.destination === queued.value?.destination,
@@ -240,13 +243,13 @@ async function toggle(key: string, box: HTMLInputElement) {
             <ActionButton
               v-if="queued.destinationChanged"
               :disabled="store.busy"
-              @click="run(() => api.resetDestination(queued!.key))"
+              @click="resetDestination(queued!.key)"
             >
               Use the added folder
             </ActionButton>
             <ActionButton
               :disabled="store.busy"
-              @click="run(() => api.chooseDestination(queued!.key))"
+              @click="chooseDestination(queued!.key)"
             >
               Change
             </ActionButton>
@@ -290,7 +293,7 @@ async function toggle(key: string, box: HTMLInputElement) {
                   v-if="row.item.problem || row.item.note"
                   :disabled="store.busy"
                   :aria-label="`Leave this one out: ${row.item.from ?? row.name}`"
-                  @click="run(() => api.exclude(row.item!.fileId, true))"
+                  @click="leaveOut(row.item!.fileId)"
                 >
                   Leave this one out
                 </ActionButton>
