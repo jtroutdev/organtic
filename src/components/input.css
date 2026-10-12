@@ -1,0 +1,7 @@
+/* The look an input and a select share. */
+.input{height:var(--size-control);background:var(--color-surface-raised);border:1px solid var(--color-outline);border-radius:var(--radius-md);padding:0 var(--space-md);width:100%;min-width:0}
+.input::placeholder{color:var(--color-on-surface-muted);opacity:1}
+.input:hover:enabled{border-color:var(--color-on-surface-muted)}
+/* An invalid field changes its edge; the sentence that says why sits beneath it. */
+.input[aria-invalid="true"],.input[aria-invalid="true"]:hover:enabled{border-color:var(--color-error)}
+.input:disabled{opacity:var(--opacity-disabled);cursor:not-allowed}

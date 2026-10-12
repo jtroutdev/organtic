@@ -8,6 +8,8 @@ const props = defineProps<{
   detail: string;
   /** Key of the selected item. */
   current?: string;
+  /** The last row of the head rests on the rule beneath it, e.g. a row of tabs. */
+  flushHead?: boolean;
 }>();
 
 // A new selection starts with its lists at the top, and stays in view in the side list.
@@ -47,7 +49,7 @@ function move(event: KeyboardEvent) {
 <template>
   <div class="panel split">
     <div class="side">
-      <div class="sidehead"><slot name="head" /></div>
+      <div class="sidehead" :class="{ flush: flushHead }"><slot name="head" /></div>
       <div ref="side" class="list" role="group" :aria-label="list" @keydown="move">
         <slot name="side" />
       </div>
@@ -58,3 +60,23 @@ function move(event: KeyboardEvent) {
     </section>
   </div>
 </template>
+
+<style scoped>
+.panel{background:var(--color-surface-raised);border:1px solid var(--color-outline-subtle);border-radius:var(--radius-md);overflow:hidden}
+.split{display:grid;grid-template:minmax(0,1fr)/minmax(220px,300px) minmax(0,1fr)}
+.side{border-right:1px solid var(--color-outline-subtle);display:grid;grid-template:auto minmax(0,1fr) auto/minmax(0,1fr);min-height:0}
+.sidehead:not(:empty){position:relative;padding:var(--space-surface);border-bottom:1px solid var(--color-outline-subtle)}
+.sidehead.flush{padding-bottom:0}
+.sidefoot:not(:empty){padding:var(--space-nested) var(--space-surface);border-top:1px solid var(--color-outline-subtle)}
+.list{display:grid;grid-template-columns:minmax(0,1fr);grid-auto-rows:max-content;align-content:start;overflow-y:auto}
+/* The pane's columns come from the stylesheet's pane grid; it scrolls as a whole only when it is
+   too short for its lists. */
+.detail{padding-block:var(--space-surface);grid-auto-rows:auto;align-content:start;row-gap:var(--space-surface);min-width:0;background:var(--color-surface);overflow-y:auto}
+.detail:focus{outline:none}
+/* Keeps visually hidden labels inside the box that scrolls them. */
+.list,.detail{position:relative}
+@media (max-width:760px){
+  .split{grid-template:fit-content(40%) minmax(0,1fr)/minmax(0,1fr)}
+  .side{border-right:0;border-bottom:1px solid var(--color-outline-subtle)}
+}
+</style>

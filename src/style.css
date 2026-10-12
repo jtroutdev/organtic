@@ -1,5 +1,8 @@
-/* Tabs across the top, then every screen is the same split: a list on the left, the selected
-   item in full on the right.
+/* What the whole app shares: tokens, the reset, element defaults and the classes any page or
+   component may use. A component's own rules live in its scoped style block, and a page's in
+   the page's. This file loads after them, so a rule here that sets a context (a running action,
+   a row of fields) wins a tie with a component's resting look.
+
    The window never scrolls. Grid rows pin everything in place and only lists (.scroll) scroll;
    the selected item's pane scrolls as a whole only when it is too short for its lists.
 
@@ -117,13 +120,6 @@
 body{margin:0;background:var(--color-background);color:var(--color-on-surface);font:var(--font-body-md);height:100dvh;overflow:hidden}
 button,input,select{font:inherit;color:inherit}
 button{cursor:pointer}
-/* Drawn here rather than by the browser, whose mixed state is a filled box with no dash. */
-input[type="checkbox"]{appearance:none;flex:none;width:var(--size-tick);height:var(--size-tick);margin:0;border:1px solid var(--color-outline);border-radius:var(--radius-sm);background:var(--color-surface-raised) center no-repeat;cursor:pointer}
-input[type="checkbox"]:hover:enabled:not(:checked,:indeterminate){border-color:var(--color-on-surface-muted);background-image:linear-gradient(var(--color-hover) 0 0)}
-input[type="checkbox"]:is(:checked,:indeterminate){background-color:var(--color-primary);border-color:var(--color-primary)}
-input[type="checkbox"]:checked{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='oklch(100%25 0 0)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E")}
-input[type="checkbox"]:indeterminate{background-image:linear-gradient(var(--color-on-primary) 0 0);background-size:var(--space-sm) var(--space-2xs)}
-input[type="checkbox"]:disabled{opacity:var(--opacity-disabled);cursor:not-allowed}
 :focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}
 /* Scroll bars: a slim rounded thumb in the border colour on a clear track. */
 ::-webkit-scrollbar{width:10px;height:10px}
@@ -131,313 +127,67 @@ input[type="checkbox"]:disabled{opacity:var(--opacity-disabled);cursor:not-allow
 ::-webkit-scrollbar-thumb{background:var(--color-outline-subtle);border:2px solid transparent;border-radius:var(--radius-full);background-clip:content-box}
 ::-webkit-scrollbar-thumb:hover,::-webkit-scrollbar-thumb:active{background-color:var(--color-outline)}
 @supports not selector(::-webkit-scrollbar){*{scrollbar-width:thin;scrollbar-color:var(--color-outline-subtle) transparent}}
-.mono{font:var(--font-code-md);font-weight:400;overflow-wrap:anywhere}
-.muted{color:var(--color-on-surface-muted)}
-.block{display:block}
 /* The browser's own margins, cleared once. Space between things comes from gap and padding. */
 h1,h2,h3,p,ol,dl,dd{margin:0}
 h1{font:var(--font-headline-lg)}
+h1:focus{outline:none}
 h2{font:var(--font-title-md)}
-.wrap{height:100dvh;display:grid;grid-template:auto minmax(0,1fr)/minmax(0,1fr)}
+summary{cursor:pointer;color:var(--color-on-surface-muted);font-weight:500}
+kbd{font:var(--font-code-md);line-height:1;background:var(--color-surface);border:1px solid var(--color-outline);border-bottom-width:2px;border-radius:var(--radius-sm);padding:var(--space-xs) var(--space-sm)}
 
-.top{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:var(--space-nested) var(--space-page);align-items:center;border-bottom:1px solid var(--color-outline-subtle);padding:var(--space-nested) var(--space-page)}
-.brand{display:flex;align-items:baseline;gap:var(--space-nested);font:var(--font-headline-md);letter-spacing:-.01em}
-.brand small{font:var(--font-label-sm);color:var(--color-on-surface-muted);letter-spacing:var(--tracking-label);text-transform:uppercase}
-.steps{justify-self:center}
-.tabs{display:flex;flex-wrap:wrap;gap:var(--space-dense)}
-.tabs button{height:var(--size-control);background:none;border:0;border-radius:var(--radius-md);padding:0 var(--space-sm);color:var(--color-on-surface-muted);font:var(--font-label-lg)}
-.tabs button:hover{color:var(--color-on-surface);background-image:linear-gradient(var(--color-hover) 0 0)}
-.tabs button:active{background-image:linear-gradient(var(--color-pressed) 0 0)}
-/* Where you are: the accent tint with an accent edge inside it. */
-.tabs button[aria-current="page"]{background-color:var(--color-accent-soft);box-shadow:inset 0 0 0 1px var(--color-accent);color:var(--color-on-surface)}
-/* The wizard's steps. A finished or reachable step is a button; the rest are plain text. */
-.steps ol{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-dense);list-style:none;padding:0}
-.steps .join{width:var(--size-badge);height:1px;background:var(--color-outline)}
-.step{display:inline-flex;align-items:center;gap:var(--space-nested);height:var(--size-control);padding:0 var(--space-sm);border:0;border-radius:var(--radius-md);background:none;color:var(--color-on-surface-muted);font:var(--font-label-lg);white-space:nowrap}
-button.step:hover{color:var(--color-on-surface);background-image:linear-gradient(var(--color-hover) 0 0)}
-button.step:active{background-image:linear-gradient(var(--color-pressed) 0 0)}
-.step.done,.step[aria-current]{color:var(--color-on-surface)}
-.step[aria-current]{font-weight:600}
-.step .badge{display:inline-grid;place-items:center;flex:none;width:var(--size-badge);height:var(--size-badge);border:1px solid var(--color-outline);border-radius:var(--radius-full);font:var(--font-code-sm)}
-.step.done .badge{background:var(--color-success-soft);border-color:transparent;color:var(--color-success)}
-.step[aria-current] .badge{background:var(--color-primary);border-color:var(--color-primary);color:var(--color-on-primary)}
-.step .n{font:var(--font-code-sm);color:var(--color-on-surface-muted)}
+/* Text */
+.mono{font:var(--font-code-md);font-weight:400;overflow-wrap:anywhere}
+.muted{color:var(--color-on-surface-muted)}
+.block{display:block}
+.label{font:var(--font-label-sm);letter-spacing:var(--tracking-label);text-transform:uppercase;color:var(--color-on-surface-muted)}
+.title{display:inline;font:var(--font-title-lg)}
+.sub{font:var(--font-title-md)}
+/* The five status tones, as a text colour. A component that takes a tone adds its own fill. */
+.ok{color:var(--color-success)}.sug{color:var(--color-accent)}.warn{color:var(--color-warning)}.bad{color:var(--color-error)}.off{color:var(--color-on-surface-muted)}
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
 
-.head{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:var(--space-surface)}
-.head>div:first-child{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--space-dense) var(--space-nested)}
-.head p{color:var(--color-on-surface-muted)}
-.row{display:flex;flex-wrap:wrap;gap:var(--space-nested);align-items:center}
-.between{justify-content:space-between}
-/* Every control shares one height. Hover and pressed lay a state layer over the control, so it
-   lifts whatever it sits on; only the primary button has fills of its own for them. */
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:var(--space-nested);height:var(--size-control);border:1px solid var(--color-outline);background:var(--color-surface-raised);border-radius:var(--radius-md);padding:0 var(--space-md);font:var(--font-label-lg);white-space:nowrap}
-.btn:hover:enabled{border-color:var(--color-on-surface-muted);background-image:linear-gradient(var(--color-hover) 0 0)}
-.btn:active:enabled{background-image:linear-gradient(var(--color-pressed) 0 0)}
-.btn.primary{background:var(--color-primary);border-color:var(--color-primary);color:var(--color-on-primary)}
-.btn.primary:hover:enabled{background:var(--color-primary-hover);border-color:var(--color-primary-hover)}
-.btn.primary:active:enabled{background:var(--color-primary-pressed);border-color:var(--color-primary-pressed)}
-.btn.quiet{border-color:transparent;background-color:transparent;color:var(--color-on-surface-muted);padding-inline:var(--space-sm)}
-.btn.quiet:hover:enabled{border-color:transparent;color:var(--color-on-surface)}
-.btn.quiet:active:enabled{color:var(--color-on-surface)}
-.btn:disabled{opacity:var(--opacity-disabled);cursor:not-allowed}
 /* While an action runs, controls stop responding but keep their look: the wait shows where it was
    started and where its result lands, not across the screen. `.off` marks a control that is
    unavailable for a reason of its own. */
 .working :disabled:not(.off),[aria-busy="true"] :disabled:not(.off){opacity:1;cursor:progress}
-.label{font:var(--font-label-sm);letter-spacing:var(--tracking-label);text-transform:uppercase;color:var(--color-on-surface-muted)}
-.hint{font:var(--font-body-sm);font-weight:500;color:var(--color-on-surface-muted)}
-.dest{display:flex;flex-wrap:wrap;gap:var(--space-dense) var(--space-nested);align-items:center}
-.dest .mono{min-width:0}
-/* The top of the queue: its heading with the ways to add to it, then the list's views as tabs
-   resting on the rule above the list. */
-.queue{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--space-nested)}
-.views{display:flex;gap:var(--space-nested);align-items:center}
-.view{display:inline-flex;align-items:center;gap:var(--space-dense);height:var(--size-control);padding:0;border:0;border-bottom:2px solid transparent;background:none;color:var(--color-on-surface-muted);font:var(--font-body-sm);font-weight:500;white-space:nowrap}
-.view:hover{color:var(--color-on-surface)}
-.view[aria-pressed="true"]{border-color:var(--color-on-surface);color:var(--color-on-surface);font-weight:600}
-.view .count{padding:var(--space-xs) var(--space-sm);border-radius:var(--radius-full);background:var(--color-background);box-shadow:inset 0 0 0 1px var(--color-outline-subtle);color:var(--color-on-surface);font:var(--font-code-sm)}
-.view[aria-pressed="true"] .count{background:var(--color-on-surface);box-shadow:none;color:var(--color-background)}
 
-/* Words only: no dot or icon inside a pill. */
-.pill{display:inline-flex;align-items:center;border-radius:var(--radius-full);padding:var(--space-2xs) var(--space-sm);font:var(--font-label-md);white-space:nowrap}
-.ok{color:var(--color-success)}.sug{color:var(--color-accent)}.warn{color:var(--color-warning)}.bad{color:var(--color-error)}.off{color:var(--color-on-surface-muted)}
-.pill.ok{background:var(--color-success-soft)}.pill.sug{background:var(--color-accent-soft)}.pill.warn{background:var(--color-warning-soft)}.pill.bad{background:var(--color-error-soft)}
-.pill.off{background:var(--color-surface);box-shadow:inset 0 0 0 1px var(--color-outline-subtle)}
-.kind{font:var(--font-code-sm);letter-spacing:var(--tracking-code);color:var(--color-on-surface-muted);border:1px solid var(--color-outline-subtle);border-radius:var(--radius-sm);padding:var(--space-xs);white-space:nowrap}
-.issue{color:var(--color-warning);font:var(--font-body-sm);font-weight:500}
-.issue.bad{color:var(--color-error)}
-.ep{font:var(--font-code-md);color:var(--color-accent);white-space:nowrap}
-/* An episode code that opens its editor: the compact button, for use inside a table row only. */
-button.ep{height:var(--size-control-sm);border:1px solid var(--color-outline);border-radius:var(--radius-sm);background:var(--color-surface-raised);padding:0 var(--space-sm);color:var(--color-on-surface);line-height:1}
-button.ep:hover{border-color:var(--color-on-surface-muted);background-image:linear-gradient(var(--color-hover) 0 0)}
-button.ep:active{background-image:linear-gradient(var(--color-pressed) 0 0)}
-.path{display:flex;min-width:0;font:var(--font-code-md);font-weight:400;white-space:nowrap}
-.path span{min-width:0;overflow:hidden;text-overflow:ellipsis}
-.path .dir{flex:0 1000 auto}
-.path .base{flex:0 1 auto}
+/* A page: what sits above the split, the split filling what is left, and anything below it. */
+.page{display:grid;grid-template:auto minmax(0,1fr)/minmax(0,1fr);grid-auto-rows:auto;gap:var(--space-page);min-height:0}
+.page>.card{align-self:start}
+/* Nothing above the split. */
+.page.bare{grid-template-rows:minmax(0,1fr)}
+.above{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--space-surface)}
 
-.panel{background:var(--color-surface-raised);border:1px solid var(--color-outline-subtle);border-radius:var(--radius-md);overflow:hidden}
-.split{display:grid;grid-template:minmax(0,1fr)/minmax(220px,300px) minmax(0,1fr)}
-.side{border-right:1px solid var(--color-outline-subtle);display:grid;grid-template:auto minmax(0,1fr) auto/minmax(0,1fr);min-height:0}
-.sidehead:not(:empty){position:relative;padding:var(--space-surface);border-bottom:1px solid var(--color-outline-subtle)}
-/* The queue's view tabs rest on the rule, so nothing pads them off it. */
-.sidehead:has(>.queue){padding-bottom:0}
-.sidefoot:not(:empty){padding:var(--space-nested) var(--space-surface);border-top:1px solid var(--color-outline-subtle)}
-.skipped>div{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--space-dense);padding:var(--space-nested) 0}
-.skipped>div+div{border-top:1px solid var(--color-outline-subtle)}
-.list{display:grid;grid-template-columns:minmax(0,1fr);grid-auto-rows:max-content;align-content:start;overflow-y:auto}
-.item{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:stretch;text-align:left;background:none;border:0;border-bottom:1px solid var(--color-outline-subtle);padding:0}
-.item .text{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--space-dense);align-content:center;padding:var(--space-nested) var(--space-surface)}
-.item:hover{background-image:linear-gradient(var(--color-hover) 0 0)}
-/* The selected item: the tint, and an accent edge drawn above its contents so that it runs
-   unbroken across the tally. */
-.item[aria-current="true"]{background-color:var(--color-accent-soft);outline:1px solid var(--color-accent);outline-offset:-1px}
-.item:focus-visible{outline:2px solid var(--color-accent);outline-offset:-2px}
-.item strong{font-weight:600;overflow-wrap:anywhere}
-.item small{color:var(--color-on-surface-muted);font:var(--font-body-sm)}
-/* The item's count on its status colour, the height of the item and flush with its right edge:
-   a shade of the colour behind and a stronger one for the number. */
-.tally{display:grid;place-items:center;min-width:var(--space-3xl);padding:var(--space-nested) var(--space-dense);background:oklch(from currentColor var(--tally-shade) h);font:var(--font-code-md);font-weight:600;line-height:1}
-.tally>span{color:oklch(from currentColor var(--tally-number) h)}
 /* A pane keeps its contents in a middle column, with a column of padding either side. Something
    that runs edge to edge (a band, a rule, a tinted row) spans all three and pads itself. */
 .detail,.band{display:grid;grid-template-columns:[full-start] var(--space-surface) [content-start] minmax(0,1fr) [content-end] var(--space-surface) [full-end]}
 .detail>*,.band>*{grid-column:content}
 .detail>.band,.detail>.bleed,.band>.matching{grid-column:full}
-.detail{padding-block:var(--space-surface);grid-auto-rows:auto;align-content:start;row-gap:var(--space-surface);min-width:0;background:var(--color-surface);overflow-y:auto}
 .detail:has(>.band:first-child){padding-top:0}
-/* A heading over a list. Once the list is long enough to be worth scrolling, the block may shrink
-   to a floor and its row takes only the height the pane has left. */
-.fill{display:grid;grid-template:auto minmax(0,1fr)/minmax(0,1fr);row-gap:var(--space-dense)}
-.fill:has(>.scroll>:nth-child(2 of :not(.cols))){min-height:112px;overflow:hidden}
-.scroll{overflow-y:auto;min-height:0}
-/* Keeps visually hidden labels inside the box that scrolls them. */
-main,.list,.detail,.scroll{position:relative}
-.capped{max-height:min(30vh,220px);padding-top:var(--space-nested)}
-.capped+p{padding-top:var(--space-nested)}
-.progress{height:var(--space-xs);background:var(--color-outline-subtle);border-radius:var(--radius-full);overflow:hidden}
-.progress i{display:block;height:100%;background:var(--color-accent);transition:width var(--duration-fast)}
-/* Progress drawn over the rule beneath a panel's heading, taking no room of its own. */
-.progress.under{position:absolute;inset:auto 0 -1px;height:var(--space-2xs);border-radius:0}
-.files{display:grid;grid-template-columns:max-content minmax(0,2fr) minmax(0,3fr);grid-auto-rows:max-content;align-content:start;column-gap:var(--space-surface)}
-.file{display:grid;grid-template-columns:subgrid;grid-column:1/-1;row-gap:var(--space-dense);align-items:center;min-height:var(--size-control);padding:var(--space-dense) 0}
-.file+.file{border-top:1px solid var(--color-outline-subtle)}
-.file .edit{grid-column:2/-1}
-/* Rows run the width of the pane, so the problem being worked on can be tinted edge to edge.
-   Each row pads itself, and a row scrolled to stops clear of the column headings. */
-.fill.bleed{row-gap:0}
-.fill.bleed>:first-child,.bleed .file{padding-inline:var(--space-surface)}
-.fill.bleed>:first-child:has(*){padding-bottom:var(--space-nested)}
-.bleed .files{scroll-padding-top:calc(var(--size-control) + var(--space-nested))}
-.file.problem .ep{color:var(--color-warning)}
-.file.at{background:var(--color-warning-soft)}
-.file.at .issue{font-weight:600}
-.cols{position:sticky;top:0;z-index:var(--z-sticky);background:var(--color-surface);padding-block:0 var(--space-dense)}
 
-/* The top of the selected group's pane, on the list's own colour and flush with the pane's edges. */
-.band{row-gap:var(--space-nested);padding-block:var(--space-surface);background:var(--color-surface-raised);border-bottom:1px solid var(--color-outline-subtle)}
-/* The group's actions keep to the right when the row wraps. */
-.band .actions{justify-self:end;justify-content:flex-end}
-.band .sort{flex:1 1 auto;justify-content:flex-end}
-/* The group on the left, wrapping within its own column so its actions stay at the top right. */
-.grouprow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--space-nested) var(--space-surface);align-items:start}
-.grouphead{gap:var(--space-dense) var(--space-nested);min-width:0;min-height:var(--size-control)}
-/* How the group was read and matched, in its status tone and as wide as the pane's content. */
-.note{border-radius:var(--radius-md);padding:var(--space-nested) var(--space-surface);font:var(--font-body-sm)}
-.note.ok{background:var(--color-success-soft)}.note.sug{background:var(--color-accent-soft)}.note.warn{background:var(--color-warning-soft)}.note.bad{background:var(--color-error-soft)}
-.note.off{background:var(--color-surface);box-shadow:inset 0 0 0 1px var(--color-outline-subtle)}
-/* Finding the match, under a rule that runs the width of the pane. */
-.matching{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--space-nested);padding:var(--space-nested) var(--space-surface) 0;border-top:1px solid var(--color-outline-subtle)}
-.clip{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.strip{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(240px,320px);justify-content:start;gap:var(--space-nested);overflow-x:auto;padding-bottom:var(--space-dense)}
-/* A match is something you act on, so it takes the stronger outline. */
-.cand{display:grid;grid-template:auto auto minmax(0,1fr)/var(--size-poster) minmax(0,1fr);gap:0 var(--space-nested);align-items:start;border:1px solid var(--color-outline);border-radius:var(--radius-md);padding:var(--space-nested);background:var(--color-surface)}
-.cand.on{border-color:var(--color-accent);background:var(--color-accent-soft)}
-.cand .poster{grid-row:1/-1;width:var(--size-poster);aspect-ratio:2/3;border-radius:var(--radius-sm);object-fit:cover;background:var(--color-surface-raised);display:grid;place-items:center;font:var(--font-code-sm);letter-spacing:var(--tracking-code);color:var(--color-on-surface-muted)}
-.cand strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cand .row{align-self:end;min-height:var(--size-control)}
-.fit{font:var(--font-label-md);color:var(--color-accent)}
-.fit.low{color:var(--color-warning)}
-.input{height:var(--size-control);background:var(--color-surface-raised);border:1px solid var(--color-outline);border-radius:var(--radius-md);padding:0 var(--space-md);width:100%;min-width:0}
-.input::placeholder{color:var(--color-on-surface-muted);opacity:1}
-.input:hover:enabled{border-color:var(--color-on-surface-muted)}
-/* An invalid field changes its edge; the sentence that says why sits beneath it. */
-.input[aria-invalid="true"],.input[aria-invalid="true"]:hover:enabled{border-color:var(--color-error)}
-.input:disabled{opacity:var(--opacity-disabled);cursor:not-allowed}
-.input.search{flex:0 1 220px;width:220px}
-.row>.input.grow{flex:1 1 220px;width:auto}
-.row>.input.grow.more{flex:2 1 200px}
-.row>.input.grow.less{flex:1 1 120px}
-.field{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--space-dense);font:var(--font-body-sm);font-weight:500;color:var(--color-on-surface-muted)}
-.field .input{color:var(--color-on-surface);font:var(--font-body-md)}
-.field .input.mono{font:var(--font-code-md);font-weight:400}
-/* Which option of a small set is on: the inverted fill. */
-.seg{display:inline-flex;height:var(--size-control);border:1px solid var(--color-outline);border-radius:var(--radius-md);overflow:hidden}
-.seg button{border:0;background:none;padding:0 var(--space-md);white-space:nowrap;color:var(--color-on-surface-muted);font:var(--font-label-lg)}
-.seg button:hover:not([aria-pressed="true"]){color:var(--color-on-surface);background-image:linear-gradient(var(--color-hover) 0 0)}
-.seg button:active:not([aria-pressed="true"]){background-image:linear-gradient(var(--color-pressed) 0 0)}
-.seg button[aria-pressed="true"]{background:var(--color-on-surface);color:var(--color-background)}
-.seg button:focus-visible{outline-offset:-2px}
-
-.card.bar{grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:var(--space-surface);padding:var(--space-nested) var(--space-surface)}
-/* A button that opens a list of tick boxes beneath it. */
-.menu{position:relative}
-.btn .n{font:var(--font-code-sm);color:var(--color-on-surface-muted)}
-.pop{position:absolute;z-index:var(--z-overlay);top:calc(100% + var(--space-dense));right:0;width:max-content;max-width:calc(100vw - 2*var(--space-page));display:grid;grid-template-columns:minmax(0,1fr);padding:var(--space-dense);background:var(--color-surface-raised);border:1px solid var(--color-outline);border-radius:var(--radius-md);box-shadow:var(--shadow-overlay)}
-.opt{display:flex;align-items:center;gap:var(--space-nested);min-height:var(--size-control);padding:0 var(--space-nested);border-radius:var(--radius-sm);cursor:pointer}
-.opt:hover{background-image:linear-gradient(var(--color-hover) 0 0)}
-.card{background:var(--color-surface-raised);border:1px solid var(--color-outline-subtle);border-radius:var(--radius-md);padding:var(--space-surface);display:grid;grid-template-columns:minmax(0,1fr);gap:var(--space-surface)}
-.stack{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--space-nested)}
-/* A further part of a card, under a rule. */
-.section{border-top:1px solid var(--color-outline-subtle);padding-top:var(--space-surface)}
-.stats{display:flex;flex-wrap:wrap;gap:var(--space-dense) var(--space-surface);font-variant-numeric:tabular-nums}
-.stats>span{display:inline-flex;align-items:baseline;gap:var(--space-nested)}
-.stats b{font:var(--font-headline-lg);line-height:1}
-.banner{border-radius:var(--radius-md);padding:var(--space-nested) var(--space-surface);display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--space-surface);align-items:center}
-.banner.bad{background:var(--color-error-soft);color:var(--color-error)}
-.banner.ok{background:var(--color-success-soft);color:var(--color-success)}
-.banner.ask{background:var(--color-accent-soft)}
-.banner.bad .btn,.banner.ok .btn{color:var(--color-on-surface)}
-.tree{font:var(--font-code-md);font-weight:400;display:grid;grid-template-columns:minmax(0,1fr);grid-auto-rows:max-content;align-content:start;overflow-wrap:anywhere}
-/* Each level of the tree steps in by one space; the row passes its depth. */
-.node{padding:var(--space-dense) 0 var(--space-dense) calc(var(--depth,0) * var(--space-surface));display:flex;flex-wrap:wrap;gap:var(--space-dense) var(--space-nested);align-items:baseline}
-.node.dir{font-weight:500}
-.node .tag{font:var(--font-label-sm);letter-spacing:var(--tracking-label);text-transform:uppercase;color:var(--color-success)}
-.node .src{flex-basis:100%;color:var(--color-on-surface-muted)}
-.node.clash{color:var(--color-error)}
-.leftover{padding-top:var(--space-dense)}
-/* What a batch did to one file: before and after side by side. */
-.oprow{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);column-gap:var(--space-surface);padding:var(--space-dense) 0;border-bottom:1px solid var(--color-outline-subtle)}
-.more{padding-top:var(--space-dense)}
-.opts{display:flex;flex-wrap:wrap;gap:var(--space-nested) var(--space-surface)}
-.check{display:grid;grid-template-columns:auto minmax(0,1fr);gap:var(--space-nested);align-items:start}
-/* Set down to the middle of the first line of its label. */
-.check input{translate:0 var(--space-2xs)}
-.check small{display:block;color:var(--color-on-surface-muted);font:var(--font-body-sm)}
-.tokens{display:flex;flex-wrap:wrap;gap:var(--space-dense)}
-.tokens code{font:var(--font-code-md);line-height:1;background:var(--color-surface-raised);border:1px solid var(--color-outline-subtle);border-radius:var(--radius-sm);padding:var(--space-xs) var(--space-sm)}
-.example{background:var(--color-surface-raised);border:1px solid var(--color-outline-subtle);border-radius:var(--radius-md);padding:var(--space-sm) var(--space-md)}
-/* Somewhere you act, so its dashed edge is the stronger outline. */
-.drop{border:1px dashed var(--color-outline);border-radius:var(--radius-md);padding:var(--space-page);text-align:center;display:grid;gap:var(--space-surface);justify-items:center;align-content:center;background:var(--color-surface)}
-/* A note about a control, for the pointer and for keyboard focus. Placed by tip.ts. */
-.tip{position:fixed;inset:auto;margin:0;max-width:min(360px,calc(100vw - 2 * var(--space-page)));padding:var(--space-xs) var(--space-sm);border:1px solid var(--color-outline);border-radius:var(--radius-sm);background:var(--color-surface-raised);color:var(--color-on-surface);font:var(--font-body-sm);box-shadow:var(--shadow-overlay);overflow-wrap:anywhere;pointer-events:none}
-summary{cursor:pointer;color:var(--color-on-surface-muted);font-weight:500}
-
-@media (max-width:760px){
-  .split{grid-template:fit-content(40%) minmax(0,1fr)/minmax(0,1fr)}
-  .split .side{border-right:0;border-bottom:1px solid var(--color-outline-subtle)}
-  .files{grid-template-columns:minmax(0,1fr)}
-  .grouprow{grid-template-columns:minmax(0,1fr)}
-}
-/* Too narrow for one line: the steps take a line of their own under the name and the tabs. */
-@media (max-width:1040px){
-  .top{grid-template-columns:minmax(0,1fr) auto}
-  .steps{grid-area:2/1/auto/-1;justify-self:start}
-}
-
-/* Only for something that opens a web page. */
-.link{background:none;border:0;padding:var(--space-xs) 0;min-height:var(--size-control-sm);color:var(--color-accent);font:var(--font-body-sm);font-weight:500;text-decoration:underline;text-underline-offset:3px}
-.link:hover{text-decoration-thickness:2px}
-.dropping{outline:2px dashed var(--color-accent);outline-offset:calc(-1 * var(--space-xs))}
-.tally.busy>span{animation:pulse var(--duration-pulse) ease-in-out infinite}
-@keyframes pulse{50%{opacity:.25}}
-/* Notices, then the page: what sits above the split, the split filling what is left, and anything
-   below it. */
-main{display:grid;grid-template:auto minmax(0,1fr)/minmax(0,1fr);gap:var(--space-page);overflow:hidden;min-width:0;padding:var(--space-page)}
-/* With no notice to show, the page is the only row. */
-main:has(>.notices:empty){grid-template-rows:minmax(0,1fr)}
-.notices,.above{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--space-surface)}
-.notices:empty{display:none}
-.page{display:grid;grid-template:auto minmax(0,1fr)/minmax(0,1fr);grid-auto-rows:auto;gap:var(--space-page);min-height:0}
-.page>.card{align-self:start}
-/* Nothing above the split. */
-.page.bare{grid-template-rows:minmax(0,1fr)}
-/* A wizard step's way back on the left and its way forward on the right. */
-.foot{display:grid;grid-template-columns:minmax(0,auto) minmax(0,auto);justify-content:space-between;align-items:center;gap:var(--space-surface)}
-.foot>:last-child{justify-content:flex-end}
+/* A wrapping run of controls or words. */
+.row{display:flex;flex-wrap:wrap;gap:var(--space-nested);align-items:center}
+.between{justify-content:space-between}
+/* A run of fields, each with its label beside it. */
 .numbers{padding-block:0}
 .numbers label{display:flex;align-items:center;gap:var(--space-nested);color:var(--color-on-surface-muted);font:var(--font-body-sm);font-weight:500}
 .numbers .input{width:calc(2 * var(--space-3xl))}
 .numbers .input.wide{width:auto;max-width:280px}
+/* A tick box with its label, or with the thing it selects. */
 .pick{display:flex;align-items:center;gap:var(--space-nested);cursor:pointer}
-.movebar{background:var(--color-accent-soft);border-radius:var(--radius-md);padding:var(--space-nested) var(--space-surface)}
-.movebar label{color:var(--color-on-surface)}
-/* A list item with a tick box beside it; the row takes over the item's rule, background and
-   selected edge. */
-.tickrow{display:grid;grid-template-columns:auto minmax(0,1fr);border-bottom:1px solid var(--color-outline-subtle)}
-.tickrow:hover{background-image:linear-gradient(var(--color-hover) 0 0)}
-.tickrow:has(.item[aria-current="true"]){background-color:var(--color-accent-soft);outline:1px solid var(--color-accent);outline-offset:-1px}
-.tickrow .item{border:0;background:none;outline:0}
-.tickrow .item:focus-visible{outline:2px solid var(--color-accent);outline-offset:-2px}
-.tickrow .item .text{padding-left:var(--space-nested)}
-.tickrow .pick{padding-left:var(--space-surface)}
-@media (prefers-reduced-motion:reduce){
-  .progress i{transition:none}
-  .tally.busy>span{animation:none}
-}
 
-/* Accessibility */
-.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
-.skip{position:absolute;left:var(--space-page);top:calc(-2 * var(--size-control));background:var(--color-primary);color:var(--color-on-primary);padding:var(--space-sm) var(--space-md);border-radius:var(--radius-md);font-weight:600;z-index:var(--z-skip)}
-.skip:focus{top:var(--space-nested)}
-main:focus,.detail:focus,h1:focus{outline:none}
-.title{display:inline;font:var(--font-title-lg)}
-.sub{font:var(--font-title-md)}
-/* Secondary information a person asked for. It sits on the scrim, with no shadow. */
-.help{background:var(--color-surface-raised);color:var(--color-on-surface);border:1px solid var(--color-outline);border-radius:var(--radius-md);padding:var(--space-surface);max-width:min(520px,calc(100vw - 2 * var(--space-page)))}
-.help[open]{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--space-surface)}
-.help::backdrop{background:var(--color-scrim)}
-.help dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:var(--space-nested) var(--space-surface)}
-.help dt{display:flex;align-items:center;gap:var(--space-dense);white-space:nowrap}
-.facts{width:min(640px,calc(100vw - 2 * var(--space-page)));max-width:none}
-.facts .about{display:grid;grid-template-columns:auto minmax(0,1fr);gap:var(--space-surface);align-items:start}
-.facts .about>div{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--space-nested)}
-.facts .about p{color:var(--color-on-surface-muted)}
-.facts .poster{width:calc(2 * var(--size-poster));aspect-ratio:2/3;border-radius:var(--radius-sm);object-fit:cover;background:var(--color-surface)}
-.facts dl{align-items:baseline}
-kbd{font:var(--font-code-md);line-height:1;background:var(--color-surface);border:1px solid var(--color-outline);border-bottom-width:2px;border-radius:var(--radius-sm);padding:var(--space-xs) var(--space-sm)}
-@media (forced-colors:active){
-  .item[aria-current="true"],.tabs button[aria-current="page"],.step[aria-current],.seg button[aria-pressed="true"],.cand.on{outline:2px solid Highlight;outline-offset:-2px}
-  .tally,.progress i{forced-color-adjust:none}
-  input[type="checkbox"]{appearance:auto}
-}
+/* A heading over a list. Once the list is long enough to be worth scrolling, the block may shrink
+   to a floor and its row takes only the height the pane has left. */
+.fill{display:grid;grid-template:auto minmax(0,1fr)/minmax(0,1fr);row-gap:var(--space-dense)}
+.fill:has(>.scroll>:nth-child(2 of :not(.cols))){min-height:112px;overflow:hidden}
+/* Its rows run the width of the pane and pad themselves. */
+.fill.bleed{row-gap:0}
+.fill.bleed>:first-child{padding-inline:var(--space-surface)}
+.fill.bleed>:first-child:has(*){padding-bottom:var(--space-nested)}
+/* Keeps visually hidden labels inside the box that scrolls them. */
+.scroll{position:relative;overflow-y:auto;min-height:0}
+.capped{max-height:min(30vh,220px);padding-top:var(--space-nested)}
+.capped+p{padding-top:var(--space-nested)}
+
+/* A note about a control, for the pointer and for keyboard focus. Made and placed by tip.ts. */
+.tip{position:fixed;inset:auto;margin:0;max-width:min(360px,calc(100vw - 2 * var(--space-page)));padding:var(--space-xs) var(--space-sm);border:1px solid var(--color-outline);border-radius:var(--radius-sm);background:var(--color-surface-raised);color:var(--color-on-surface);font:var(--font-body-sm);box-shadow:var(--shadow-overlay);overflow-wrap:anywhere;pointer-events:none}
