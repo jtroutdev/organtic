@@ -2,10 +2,15 @@
 import { computed } from "vue";
 import { commonFolder } from "../../core/paths.ts";
 import type { BatchStatus } from "../../core/types.ts";
+import ActionButton from "../components/ActionButton.vue";
+import ChangeRow from "../components/ChangeRow.vue";
 import ListItem from "../components/ListItem.vue";
+import NoticeBanner from "../components/NoticeBanner.vue";
+import PageHeading from "../components/PageHeading.vue";
 import SplitView from "../components/SplitView.vue";
+import StatusPill from "../components/StatusPill.vue";
+import SurfaceCard from "../components/SurfaceCard.vue";
 import { announce, api, loadHistory, run, store } from "../store.ts";
-import { vTip } from "../tip.ts";
 
 const STATUS: Record<BatchStatus, [tone: string, label: string]> = {
   complete: ["ok", "Complete"],
@@ -29,6 +34,11 @@ const root = computed(() =>
 );
 const short = (path: string) =>
   root.value && path.startsWith(root.value) ? path.slice(root.value.length) : path;
+const KINDS = {
+  mkdir: "new folder",
+  rmdir: "removed empty folder",
+  download: "downloaded artwork",
+};
 const when = (value: string) =>
   value ? new Date(value).toLocaleString() : "Unreadable record";
 async function undo(id: string) {
@@ -41,19 +51,16 @@ async function undo(id: string) {
 <template>
   <div class="page">
     <div class="above">
-      <div class="head">
-        <div>
-          <h1>History</h1>
-          <p>Every batch is recorded so it can be put back.</p>
-        </div>
-        <button class="btn" type="button" :disabled="store.busy" @click="loadHistory">
-          Refresh
-        </button>
-      </div>
+      <PageHeading title="History">
+        Every batch is recorded so it can be put back.
+        <template #actions>
+          <ActionButton :disabled="store.busy" @click="loadHistory">Refresh</ActionButton>
+        </template>
+      </PageHeading>
     </div>
-    <div v-if="!batch" class="card">
+    <SurfaceCard v-if="!batch">
       <p>No batches yet. Applied changes will be listed here.</p>
-    </div>
+    </SurfaceCard>
     <SplitView v-else :current="batch.id" list="Batches" detail="Selected batch">
       <template #side>
         <ListItem
@@ -71,54 +78,40 @@ async function undo(id: string) {
       </template>
       <div class="row between">
         <h2 class="title">{{ when(batch.createdAt) }}</h2>
-        <span class="pill" :class="STATUS[batch.status][0]">{{
-          STATUS[batch.status][1]
-        }}</span>
+        <StatusPill :tone="STATUS[batch.status][0]">{{ STATUS[batch.status][1] }}</StatusPill>
       </div>
       <p class="muted">
         {{ batch.count }} operations<template v-if="root">
           in <span class="mono">{{ root }}</span></template
         >
       </p>
-      <div v-if="batch.status === 'interrupted'" class="banner bad">
-        <span
-          >This batch stopped before it finished. Some files have their new
-          names and some do not. Undo puts the renamed ones back.</span
-        >
-      </div>
-      <div v-if="batch.status === 'damaged'" class="banner bad">
-        <span
-          >This record could not be read, so the batch cannot be undone from
-          here.</span
-        >
-      </div>
+      <NoticeBanner v-if="batch.status === 'interrupted'" tone="bad"
+        >This batch stopped before it finished. Some files have their new
+        names and some do not. Undo puts the renamed ones back.</NoticeBanner
+      >
+      <NoticeBanner v-if="batch.status === 'damaged'" tone="bad"
+        >This record could not be read, so the batch cannot be undone from
+        here.</NoticeBanner
+      >
       <div v-if="batch.operations.length" class="fill">
         <h3 class="label">What changed</h3>
         <div class="scroll">
-          <div
-            v-for="(op, index) in batch.operations.slice(0, LIMIT)"
-            :key="index"
-            class="mono oprow"
-          >
-            <template v-if="op.type === 'move' || op.type === 'rename'"
-              ><span v-tip="op.source" class="muted">{{ short(op.source ?? "") }}</span
-              ><span v-tip="op.target"
-                ><span class="sr-only">became </span>{{ short(op.target) }}</span
-              ></template
-            >
-            <template v-else
-              ><span class="muted">{{
-                op.type === "mkdir"
-                  ? "new folder"
-                  : op.type === "rmdir"
-                    ? "removed empty folder"
-                    : op.type === "download"
-                      ? "downloaded artwork"
-                      : "new metadata file"
-              }}</span
-              ><span v-tip="op.target">{{ short(op.target) }}</span></template
-            >
-          </div>
+          <template v-for="(op, index) in batch.operations.slice(0, LIMIT)" :key="index">
+            <ChangeRow
+              v-if="op.type === 'move' || op.type === 'rename'"
+              :before="short(op.source ?? '')"
+              :before-tip="op.source"
+              :after="short(op.target)"
+              :after-tip="op.target"
+              renamed
+            />
+            <ChangeRow
+              v-else
+              :before="KINDS[op.type as keyof typeof KINDS] ?? 'new metadata file'"
+              :after="short(op.target)"
+              :after-tip="op.target"
+            />
+          </template>
           <p v-if="batch.operations.length > LIMIT" class="muted more">
             and {{ batch.operations.length - LIMIT }} more
           </p>
@@ -129,18 +122,13 @@ async function undo(id: string) {
           >The original names were restored.</span
         >
         <template v-else-if="batch.status !== 'damaged'">
-          <button
-            class="btn primary"
-            type="button"
-            :disabled="store.busy"
-            @click="undo(batch.id)"
-          >
+          <ActionButton variant="primary" :disabled="store.busy" @click="undo(batch.id)">
             {{
               batch.status === "interrupted"
                 ? "Put the moved files back"
                 : "Undo this batch"
             }}
-          </button>
+          </ActionButton>
           <span class="muted"
             >Stops without changing anything further if a file was edited or its
             old name is taken.</span
@@ -150,3 +138,7 @@ async function undo(id: string) {
     </SplitView>
   </div>
 </template>
+
+<style scoped>
+.more{padding-top:var(--space-dense)}
+</style>

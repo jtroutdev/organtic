@@ -13,6 +13,11 @@ import {
   store,
 } from "./store.ts";
 import type { Page } from "./store.ts";
+import ActionButton from "./components/ActionButton.vue";
+import AppDialog from "./components/AppDialog.vue";
+import NavTab from "./components/NavTab.vue";
+import NoticeBanner from "./components/NoticeBanner.vue";
+import WizardSteps from "./components/WizardSteps.vue";
 import AddPage from "./pages/AddPage.vue";
 import ReviewPage from "./pages/ReviewPage.vue";
 import PreviewPage from "./pages/PreviewPage.vue";
@@ -51,24 +56,24 @@ const at = computed(() => {
 });
 // A step can be opened from the stepper once the queue has what it needs.
 const steps = computed<
-  { page: Page | null; label: string; open: boolean; count: number | null; unit: string }[]
+  { id: Page | null; label: string; open: boolean; count: number | null; unit: string }[]
 >(() => [
-  { page: "add", label: "Add files", open: true, count: null, unit: "" },
+  { id: "add", label: "Add files", open: true, count: null, unit: "" },
   {
-    page: "review",
+    id: "review",
     label: "Matching",
     open: !empty.value,
     count: store.queue.groups.length || null,
     unit: " groups in the queue",
   },
   {
-    page: "preview",
+    id: "preview",
     label: "Preview",
     open: canPreview() && !store.applied,
     count: confirmed().length || null,
     unit: " groups confirmed",
   },
-  { page: null, label: "Done", open: false, count: null, unit: "" },
+  { id: null, label: "Done", open: false, count: null, unit: "" },
 ]);
 const mac = navigator.platform.toLowerCase().includes("mac");
 const mod = mac ? "⌘" : "Ctrl";
@@ -94,7 +99,7 @@ async function drop(event: DragEvent) {
   await run(() => api.addDropped(files));
 }
 
-const help = ref<HTMLDialogElement>();
+const help = ref<InstanceType<typeof AppDialog>>();
 /** Steps the selection in the current page's list without moving focus. */
 function step(by: number) {
   const items = [...document.querySelectorAll<HTMLElement>(".side .item")];
@@ -133,7 +138,7 @@ function shortcut(event: KeyboardEvent) {
   else if (!typing && !command && !event.altKey && key === "/")
     void focusOn("#search-title");
   else if (!typing && !command && !event.altKey && event.key === "?")
-    help.value?.showModal();
+    help.value?.open();
   else handled = false;
   if (handled) event.preventDefault();
 }
@@ -171,82 +176,38 @@ watch(
       <div class="brand">
         Organtic<small v-if="!api.desktop">Example mode</small>
       </div>
-      <nav class="steps" aria-label="Progress">
-        <ol>
-          <template v-for="(step, index) in steps" :key="step.label">
-            <li v-if="index" class="join" aria-hidden="true"></li>
-            <li>
-              <component
-                :is="step.open && index + 1 !== at ? 'button' : 'span'"
-                class="step"
-                :class="{ done: index + 1 < at }"
-                :type="step.open && index + 1 !== at ? 'button' : undefined"
-                :aria-current="index + 1 === at ? 'step' : undefined"
-                @click="step.open && step.page && index + 1 !== at && go(step.page)"
-              >
-                <span class="badge">
-                  <svg
-                    v-if="index + 1 < at"
-                    aria-hidden="true"
-                    viewBox="0 0 16 16"
-                    width="12"
-                    height="12"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  >
-                    <path d="M3.5 8.5l3 3 6-7" />
-                  </svg>
-                  <template v-else>{{ index + 1 }}</template>
-                </span>
-                <span class="sr-only">{{ index + 1 < at ? "Finished: " : "" }}</span
-                >{{ step.label
-                }}<span v-if="step.count !== null" class="n"
-                  >{{ step.count }}<span class="sr-only">{{ step.unit }}</span></span
-                >
-              </component>
-            </li>
-          </template>
-        </ol>
-      </nav>
+      <WizardSteps :steps="steps" :at="at" @go="go" />
       <nav class="tabs" aria-label="Main">
-        <button
+        <NavTab
           v-for="(id, index) in tabs"
           :key="id"
-          type="button"
-          :aria-current="store.page === id ? 'page' : undefined"
+          :current="store.page === id"
           :aria-keyshortcuts="`Control+${index + 3}`"
           @click="go(id)"
         >
           {{ LABELS[id] }}
-        </button>
-        <button type="button" aria-haspopup="dialog" @click="help?.showModal()">
-          Shortcuts
-        </button>
+        </NavTab>
+        <NavTab aria-haspopup="dialog" @click="help?.open()">Shortcuts</NavTab>
       </nav>
     </header>
     <main id="content" tabindex="-1">
       <div class="notices">
-        <div v-if="!api.desktop" class="banner ask">
-          <span
-            >This browser preview uses example files and a canned catalogue. Open
-            the desktop app to work with your own files.</span
-          >
-        </div>
-        <div v-if="store.error" class="banner bad" role="alert">
-          <span>{{ store.error }}</span>
-          <button class="btn" type="button" @click="store.error = ''">
-            Dismiss
-          </button>
-        </div>
+        <NoticeBanner v-if="!api.desktop" tone="ask"
+          >This browser preview uses example files and a canned catalogue. Open
+          the desktop app to work with your own files.</NoticeBanner
+        >
+        <NoticeBanner v-if="store.error" tone="bad" role="alert"
+          >{{ store.error
+          }}<template #action>
+            <ActionButton @click="store.error = ''">Dismiss</ActionButton>
+          </template>
+        </NoticeBanner>
       </div>
       <component :is="pages[view]" />
     </main>
   </div>
   <p class="sr-only" role="status" aria-live="polite">{{ store.notice }}</p>
-  <dialog ref="help" class="help" aria-labelledby="help-title">
+  <AppDialog ref="help" labelledby="help-title">
     <h2 id="help-title">Keyboard shortcuts</h2>
     <dl>
       <template v-for="[keys, action] in SHORTCUTS" :key="action">
@@ -260,7 +221,33 @@ watch(
       </template>
     </dl>
     <form method="dialog">
-      <button class="btn primary" type="submit">Close</button>
+      <ActionButton variant="primary" type="submit">Close</ActionButton>
     </form>
-  </dialog>
+  </AppDialog>
 </template>
+
+<style scoped>
+/* The header, then the page. The window never scrolls: grid rows pin everything in place. */
+.wrap{height:100dvh;display:grid;grid-template:auto minmax(0,1fr)/minmax(0,1fr)}
+.dropping{outline:2px dashed var(--color-accent);outline-offset:calc(-1 * var(--space-xs))}
+.top{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:var(--space-nested) var(--space-page);align-items:center;border-bottom:1px solid var(--color-outline-subtle);padding:var(--space-nested) var(--space-page)}
+.brand{display:flex;align-items:baseline;gap:var(--space-nested);font:var(--font-headline-md);letter-spacing:-.01em}
+.brand small{font:var(--font-label-sm);color:var(--color-on-surface-muted);letter-spacing:var(--tracking-label);text-transform:uppercase}
+.steps{justify-self:center}
+.tabs{display:flex;flex-wrap:wrap;gap:var(--space-dense)}
+/* Notices, then the page: what sits above the split, the split filling what is left, and anything
+   below it. */
+main{position:relative;display:grid;grid-template:auto minmax(0,1fr)/minmax(0,1fr);gap:var(--space-page);overflow:hidden;min-width:0;padding:var(--space-page)}
+main:focus{outline:none}
+/* With no notice to show, the page is the only row. */
+main:has(>.notices:empty){grid-template-rows:minmax(0,1fr)}
+.notices{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--space-surface)}
+.notices:empty{display:none}
+.skip{position:absolute;left:var(--space-page);top:calc(-2 * var(--size-control));background:var(--color-primary);color:var(--color-on-primary);padding:var(--space-sm) var(--space-md);border-radius:var(--radius-md);font-weight:600;z-index:var(--z-skip)}
+.skip:focus{top:var(--space-nested)}
+/* Too narrow for one line: the steps take a line of their own under the name and the tabs. */
+@media (max-width:1040px){
+  .top{grid-template-columns:minmax(0,1fr) auto}
+  .steps{grid-area:2/1/auto/-1;justify-self:start}
+}
+</style>

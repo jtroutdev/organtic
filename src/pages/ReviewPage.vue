@@ -5,8 +5,28 @@ import type {
   MediaKind,
   QueueFile,
 } from "../../core/types.ts";
+import ActionButton from "../components/ActionButton.vue";
+import AppDialog from "../components/AppDialog.vue";
+import EpisodeCode from "../components/EpisodeCode.vue";
+import FilePath from "../components/FilePath.vue";
+import GroupHeading from "../components/GroupHeading.vue";
+import FileRow from "../components/FileRow.vue";
+import IssueText from "../components/IssueText.vue";
 import ListItem from "../components/ListItem.vue";
+import MatchCard from "../components/MatchCard.vue";
+import PosterImage from "../components/PosterImage.vue";
+import ProgressBar from "../components/ProgressBar.vue";
+import SegmentedSet from "../components/SegmentedSet.vue";
+import SelectInput from "../components/SelectInput.vue";
+import SelectionBar from "../components/SelectionBar.vue";
 import SplitView from "../components/SplitView.vue";
+import StatusNote from "../components/StatusNote.vue";
+import StatusPill from "../components/StatusPill.vue";
+import StepFooter from "../components/StepFooter.vue";
+import TextInput from "../components/TextInput.vue";
+import TickBox from "../components/TickBox.vue";
+import ViewTab from "../components/ViewTab.vue";
+import WebLink from "../components/WebLink.vue";
 import { focusOn, vFocus } from "../focus.ts";
 import { vTip } from "../tip.ts";
 import {
@@ -74,11 +94,20 @@ watch(
   { immediate: true },
 );
 const SOURCES = { tmdb: "TMDB", tvmaze: "TVmaze", kitsu: "Kitsu" };
+const kinds = computed<[MediaKind | "anime", string, string?][]>(() => [
+  ["movie", "Film"],
+  ["tv", "TV"],
+  ["anime", "Anime", `Also searches Kitsu, as a ${group.value?.kind === "tv" ? "show" : "film"}`],
+]);
+const NUMBERINGS: [Catalogue, string, string?][] = [
+  ["tmdb", "TMDB"],
+  ["tvdb", "TVDB", "Places more specials; needs the show set to TVDB ordering in Plex"],
+];
 
 // Everything known about a candidate stays in a dialog until it is needed to tell two results apart.
 const idOf = (candidate: { provider: string; id: unknown }) =>
   `${candidate.provider}-${candidate.id}`;
-const details = ref<HTMLDialogElement>();
+const details = ref<InstanceType<typeof AppDialog>>();
 const detailed = ref<string | null>(null);
 const detailedAt = computed(
   () => group.value?.candidates.findIndex((item) => idOf(item) === detailed.value) ?? -1,
@@ -106,27 +135,13 @@ const facts = computed<[string, string | number | null | undefined][]>(() => {
 async function showDetails(id: string) {
   detailed.value = id;
   await nextTick();
-  details.value?.showModal();
+  details.value?.open();
 }
 async function useDetailed() {
   const index = detailedAt.value;
   details.value?.close();
   if (index >= 0) await run(() => api.choose(group.value!.key, index));
   await focusOn(".detail");
-}
-// Posters are shown small. TMDB and TVmaze serve a reduced size at a predictable address;
-// a provider that does not, names its own.
-const thumb = (item: { posterUrl?: string; posterThumbUrl?: string }) =>
-  item.posterThumbUrl ??
-  item.posterUrl
-    ?.replace("/t/p/original/", "/t/p/w154/")
-    .replace("/original_untouched/", "/medium_portrait/");
-const broken = ref<string[]>([]);
-function posterFailed(event: Event, candidate: { provider: string; id: unknown; posterUrl?: string }) {
-  const image = event.target as HTMLImageElement;
-  // Fall back to the full-size poster once before giving up on it.
-  if (candidate.posterUrl && image.src !== candidate.posterUrl) image.src = candidate.posterUrl;
-  else broken.value = [...broken.value, idOf(candidate)];
 }
 // How the group was read and why this match was offered.
 const why = computed(() => {
@@ -259,6 +274,10 @@ const pickedHere = computed(() =>
 const allPicked = computed(
   () => !!group.value && pickedHere.value.length === group.value.files.length,
 );
+function pickFile(id: string, on: boolean) {
+  const rest = picked.value.filter((item) => item !== id);
+  picked.value = on ? [...rest, id] : rest;
+}
 function pickAll(on: boolean) {
   picked.value = on ? group.value!.files.map((file) => file.id) : [];
 }
@@ -390,11 +409,6 @@ function closeEdit(fileId: string) {
   editing.value = null;
   void focusOn(`[data-file="${fileId}"] .ep`);
 }
-// A path is shown as its folder, which gives way first when space is short, and its file name.
-function split(path: string) {
-  const at = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1;
-  return [path.slice(0, at), path.slice(at)];
-}
 async function saveNumbers(fileId: string, thenNext = false) {
   const value = (text: string | number) =>
     String(text).trim() === "" ? null : Number(text);
@@ -451,24 +465,23 @@ async function search() {
 <template>
   <div class="page bare">
       <h1 class="sr-only">Matching</h1>
-      <SplitView :current="group?.key" list="Groups" detail="Selected group" :aria-busy="group?.status === 'matching'">
+      <SplitView flush-head :current="group?.key" list="Groups" detail="Selected group" :aria-busy="group?.status === 'matching'">
         <template #head>
           <div class="queue">
             <div class="row between">
               <h2>Queue</h2>
               <div class="row" role="group" aria-label="Add to the queue">
-                <button class="btn add" type="button" aria-label="Add files" :disabled="store.busy" @click="run(api.addFiles)">
-                  <svg aria-hidden="true" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10" /></svg>Files
-                </button>
-                <button class="btn add" type="button" aria-label="Add folder" :disabled="store.busy" @click="run(api.addFolder)">
-                  <svg aria-hidden="true" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10" /></svg>Folder
-                </button>
+                <ActionButton icon="plus" aria-label="Add files" :disabled="store.busy" @click="run(api.addFiles)">
+                  Files
+                </ActionButton>
+                <ActionButton icon="plus" aria-label="Add folder" :disabled="store.busy" @click="run(api.addFolder)">
+                  Folder
+                </ActionButton>
               </div>
             </div>
             <div class="views">
               <label v-if="groups.length > 1" class="pick">
-                <input
-                  type="checkbox"
+                <TickBox
                   aria-label="Select all groups"
                   :checked="ticked.length === groups.length"
                   :indeterminate="ticked.length > 0 && ticked.length < groups.length"
@@ -479,33 +492,24 @@ async function search() {
                   "
                 />
               </label>
-              <button
+              <ViewTab
                 v-for="[id, label] in filters"
                 :key="id"
-                class="view"
-                type="button"
-                :aria-pressed="store.filter === id"
+                :pressed="store.filter === id"
+                :count="countFor(id)"
                 @click="store.filter = id"
               >
-                {{ label }}<span class="count">{{ countFor(id) }}</span>
-              </button>
+                {{ label }}
+              </ViewTab>
             </div>
             <!-- Lookups fill the rule under the queue's heading, so nothing moves to make room. -->
-            <div
+            <ProgressBar
               v-if="store.queue.lookups"
-              class="progress under"
-              role="progressbar"
-              aria-label="Lookups done"
-              :aria-valuenow="store.queue.lookups.done"
-              aria-valuemin="0"
-              :aria-valuemax="store.queue.lookups.total"
-            >
-              <i
-                :style="{
-                  width: `${(store.queue.lookups.done / store.queue.lookups.total) * 100}%`,
-                }"
-              ></i>
-            </div>
+              under
+              label="Lookups done"
+              :value="store.queue.lookups.done"
+              :max="store.queue.lookups.total"
+            />
           </div>
         </template>
         <template v-if="store.queue.skipped.length" #foot>
@@ -518,10 +522,10 @@ async function search() {
               <div v-for="file in store.queue.skipped" :key="file.id">
                 <span class="mono">{{ file.source }}</span>
                 <span class="row between">
-                  <span class="pill off">{{ file.reason }}</span>
-                  <button class="btn" type="button" :disabled="store.busy" @click="include(file.id)">
+                  <StatusPill tone="off">{{ file.reason }}</StatusPill>
+                  <ActionButton :disabled="store.busy" @click="include(file.id)">
                     {{ including === file.id ? "Including…" : "Include" }}
-                  </button>
+                  </ActionButton>
                 </span>
               </div>
             </div>
@@ -530,8 +534,7 @@ async function search() {
         <template #side>
           <div v-for="item in groups" :key="item.key" class="tickrow">
             <label class="pick">
-              <input
-                type="checkbox"
+              <TickBox
                 :aria-label="`Select ${nameOf(item)}`"
                 :checked="tickedKeys.includes(item.key)"
                 :tabindex="item.key === group?.key ? 0 : -1"
@@ -541,6 +544,7 @@ async function search() {
               />
             </label>
             <ListItem
+              plain
               :current="item.key === group?.key"
               :tone="STATUS[item.status][0]"
               :note="STATUS[item.status][1]"
@@ -561,41 +565,39 @@ async function search() {
         <template v-if="group">
           <!-- The group and what can be done with it, then finding its match. -->
           <div class="band">
-            <form
+            <SelectionBar
               v-if="ticked.length"
-              class="row numbers movebar"
               aria-label="Merge or remove the selected groups"
-              @submit.prevent="mergeTicked"
-              @keydown.esc="untick"
+              :summary="`${plural(ticked.length, 'group')} selected`"
+              @submit="mergeTicked"
+              @clear="untick"
             >
-              <strong>{{ plural(ticked.length, "group") }} selected</strong>
               <template v-if="ticked.length > 1">
                 <label
                   >Merge into
-                  <select v-model="mergeInto" class="input wide">
+                  <SelectInput v-model="mergeInto" class="wide">
                     <option v-for="item in ticked" :key="item.key" :value="item.key">
                       {{ nameOf(item) }}
                     </option>
-                  </select></label
+                  </SelectInput></label
                 >
-                <button class="btn primary" type="submit" :disabled="store.busy">Merge</button>
+                <ActionButton variant="primary" type="submit" :disabled="store.busy">
+                  Merge
+                </ActionButton>
               </template>
-              <button class="btn" type="button" :disabled="store.busy" @click="removeTicked">
+              <ActionButton :disabled="store.busy" @click="removeTicked">
                 Remove from queue
-              </button>
-              <button class="btn quiet" type="button" @click="untick">Clear selection</button>
-            </form>
+              </ActionButton>
+            </SelectionBar>
             <div class="grouprow">
-              <div class="row grouphead">
-                <span class="kind">{{ group.kind === "tv" ? "TV" : "FILM" }}</span>
-                <h2 class="title">
-                  {{ match?.title ?? (group.parsedTitle || "Unnamed") }}
-                  <span v-if="match" class="muted">({{ match.year ?? "year unknown" }})</span>
-                </h2>
-                <span class="pill" :class="STATUS[group.status][0]">{{
-                  STATUS[group.status][1]
-                }}</span>
-              </div>
+              <GroupHeading
+                :kind="group.kind"
+                :tone="STATUS[group.status][0]"
+                :status="STATUS[group.status][1]"
+              >
+                {{ match?.title ?? (group.parsedTitle || "Unnamed") }}
+                <span v-if="match" class="muted">({{ match.year ?? "year unknown" }})</span>
+              </GroupHeading>
               <form
                 v-if="merging"
                 class="row numbers actions"
@@ -604,82 +606,62 @@ async function search() {
               >
                 <label
                   >Merge all {{ plural(group.files.length, "file") }} into
-                  <select v-focus v-model="mergeTo" class="input wide">
+                  <SelectInput v-focus v-model="mergeTo" class="wide">
                     <option v-for="item in others" :key="item.key" :value="item.key">
                       {{ nameOf(item) }}
                     </option>
-                  </select></label
+                  </SelectInput></label
                 >
-                <button class="btn primary" type="submit" :disabled="busy">Merge</button>
-                <button class="btn quiet" type="button" @click="merging = false">Cancel</button>
+                <ActionButton variant="primary" type="submit" :disabled="busy">Merge</ActionButton>
+                <ActionButton variant="quiet" @click="merging = false">Cancel</ActionButton>
               </form>
               <div v-else class="row actions">
-                <button
+                <ActionButton
                   v-if="others.length"
-                  class="btn quiet"
-                  type="button"
+                  variant="quiet"
                   aria-label="Merge group into another"
                   :disabled="store.busy"
                   @click="startMerge"
                 >
                   Merge group
-                </button>
-                <button
-                  class="btn quiet"
-                  type="button"
+                </ActionButton>
+                <ActionButton
+                  variant="quiet"
                   aria-label="Remove from queue"
                   :disabled="store.busy"
                   @click="remove"
                 >
                   Remove
-                </button>
-                <button
+                </ActionButton>
+                <ActionButton
                   v-if="group.status !== 'confirmed' && match"
-                  class="btn primary"
-                  type="button"
+                  variant="primary"
                   :disabled="busy"
                   @click="confirmAndNext"
                 >
                   Confirm and next
-                </button>
-                <button v-else class="btn" type="button" @click="selectNext(group.key)">
-                  Next group
-                </button>
+                </ActionButton>
+                <ActionButton v-else @click="selectNext(group.key)">Next group</ActionButton>
               </div>
             </div>
-            <p v-if="why" class="note" :class="STATUS[group.status][0]">{{ why }}</p>
+            <StatusNote v-if="why" :tone="STATUS[group.status][0]">{{ why }}</StatusNote>
             <div class="matching">
               <div class="row between">
                 <form class="row" novalidate @submit.prevent="search">
-                  <input
+                  <TextInput
                     id="search-title"
                     v-model="query"
-                    class="input search"
+                    class="search"
                     aria-label="Search title"
                     aria-required="true"
-                    :aria-invalid="searchEmpty ? 'true' : undefined"
+                    :invalid="searchEmpty"
                     aria-describedby="search-error"
                     maxlength="200"
                   />
-                  <div class="seg" role="group" aria-label="Type">
-                    <button type="button" :aria-pressed="kind === 'movie'" @click="kind = 'movie'">
-                      Film
-                    </button>
-                    <button type="button" :aria-pressed="kind === 'tv'" @click="kind = 'tv'">
-                      TV
-                    </button>
-                    <button
-                      type="button"
-                      :aria-pressed="kind === 'anime'"
-                      v-tip="`Also searches Kitsu, as a ${group.kind === 'tv' ? 'show' : 'film'}`"
-                      @click="kind = 'anime'"
-                    >
-                      Anime
-                    </button>
-                  </div>
-                  <button class="btn" type="submit" :disabled="busy">Search</button>
-                  <span v-if="searchEmpty" id="search-error" class="issue bad" role="alert"
-                    >Enter a title to search for.</span
+                  <SegmentedSet v-model="kind" label="Type" :options="kinds" />
+                  <ActionButton type="submit" :disabled="busy">Search</ActionButton>
+                  <IssueText v-if="searchEmpty" id="search-error" bad role="alert"
+                    >Enter a title to search for.</IssueText
                   >
                 </form>
               <div
@@ -688,16 +670,11 @@ async function search() {
               >
                 <label
                   >Sort matches
-                  <select
-                    class="input wide"
-                    :value="group.ordering ?? ''"
+                  <SelectInput
+                    class="wide"
+                    :model-value="group.ordering ?? ''"
                     :disabled="busy"
-                    @change="
-                      setOrdering(
-                        ($event.target as HTMLSelectElement).value || null,
-                        group.keepNumbers,
-                      )
-                    "
+                    @update:model-value="setOrdering($event || null, group.keepNumbers)"
                   >
                     <option value="">Aired order</option>
                     <option
@@ -707,11 +684,10 @@ async function search() {
                     >
                       {{ item.name }}
                     </option>
-                  </select></label
+                  </SelectInput></label
                 >
                 <label v-if="group.ordering" class="pick">
-                  <input
-                    type="checkbox"
+                  <TickBox
                     :checked="group.keepNumbers"
                     :disabled="busy"
                     @change="
@@ -729,112 +705,55 @@ async function search() {
                 <span class="hint"
                   >Number seasons and episodes as</span
                 >
-                <div class="seg" role="group" aria-label="Number seasons and episodes as">
-                  <button
-                    type="button"
-                    :aria-pressed="group.numbering === 'tmdb'"
-                    :disabled="busy"
-                    @click="setNumbering('tmdb')"
-                  >
-                    TMDB
-                  </button>
-                  <button
-                    type="button"
-                    :aria-pressed="group.numbering === 'tvdb'"
-                    :disabled="busy"
-                    v-tip="'Places more specials; needs the show set to TVDB ordering in Plex'"
-                    @click="setNumbering('tvdb')"
-                  >
-                    TVDB
-                  </button>
-                </div>
+                <SegmentedSet
+                  label="Number seasons and episodes as"
+                  :options="NUMBERINGS"
+                  :model-value="group.numbering"
+                  :disabled="busy"
+                  @update:model-value="setNumbering"
+                />
               </div>
               <div class="strip" role="group" aria-label="Matches">
-                <div
+                <MatchCard
                   v-for="(candidate, index) in group.candidates"
                   :key="idOf(candidate)"
-                  class="cand"
-                  :class="{ on: group.chosen === index }"
-                >
-                  <img
-                    v-if="candidate.posterUrl && !broken.includes(idOf(candidate))"
-                    class="poster"
-                    :src="thumb(candidate)"
-                    alt=""
-                    loading="lazy"
-                    referrerpolicy="no-referrer"
-                    @error="posterFailed($event, candidate)"
-                  />
-                  <span v-else class="poster" aria-hidden="true">{{
-                    candidate.kind === "tv" ? "TV" : "FILM"
-                  }}</span>
-                  <strong v-tip.clipped="candidate.title"
-                    >{{ candidate.title }}
-                    <span class="muted">({{ candidate.year ?? "year unknown" }})</span></strong
-                  >
-                  <span class="fit" :class="{ low: candidate.weak }">
-                    {{ candidate.fit }} ·
-                    {{ SOURCES[candidate.provider] }}
-                  </span>
-                  <span class="row">
-                    <span v-if="group.chosen === index" class="label">{{
-                      group.status === "confirmed" ? "Chosen" : "Suggested"
-                    }}</span>
-                    <button
-                      v-else
-                      class="btn"
-                      type="button"
-                      :disabled="busy"
-                      :aria-label="`Use this: ${candidate.title} (${candidate.year ?? 'year unknown'})`"
-                      @click="run(() => api.choose(group!.key, index))"
-                    >
-                      Use this
-                    </button>
-                    <button
-                      class="btn"
-                      type="button"
-                      aria-haspopup="dialog"
-                      :aria-label="`Details of ${candidate.title} (${candidate.year ?? 'year unknown'})`"
-                      @click="showDetails(idOf(candidate))"
-                    >
-                      Details
-                    </button>
-                  </span>
-                </div>
+                  :candidate="candidate"
+                  :source="SOURCES[candidate.provider]"
+                  :chosen="group.chosen === index"
+                  :confirmed="group.status === 'confirmed'"
+                  :disabled="busy"
+                  @use="run(() => api.choose(group!.key, index))"
+                  @details="showDetails(idOf(candidate))"
+                />
               </div>
             </div>
           </div>
           <div class="fill bleed">
             <div>
-              <form
+              <SelectionBar
                 v-if="pickedHere.length"
-                class="row numbers movebar"
                 aria-label="Move the selected files"
-                @submit.prevent="move(false)"
-                @keydown.esc="picked = []"
+                :summary="`${pickedHere.length} selected`"
+                @submit="move(false)"
+                @clear="picked = []"
               >
-                <strong>{{ pickedHere.length }} selected</strong>
                 <label
                   >Move to
-                  <select v-model="moveTo" class="input wide">
+                  <SelectInput v-model="moveTo" class="wide">
                     <option :value="NEW_GROUP">A new group</option>
                     <option v-for="item in others" :key="item.key" :value="item.key">
                       {{ nameOf(item) }}
                     </option>
-                  </select></label
+                  </SelectInput></label
                 >
-                <button class="btn primary" type="submit" :disabled="busy">Move</button>
-                <button class="btn quiet" type="button" @click="picked = []">
-                  Clear selection
-                </button>
-              </form>
+                <ActionButton variant="primary" type="submit" :disabled="busy">Move</ActionButton>
+              </SelectionBar>
             </div>
             <div class="files scroll">
-              <div class="file cols">
+              <FileRow heading>
                 <label class="pick label">
-                  <input
+                  <TickBox
                     v-if="canMove && group.files.length > 1"
-                    type="checkbox"
                     aria-label="Select all files"
                     :checked="allPicked"
                     :indeterminate="pickedHere.length > 0 && !allPicked"
@@ -851,63 +770,57 @@ async function search() {
                     role="group"
                     aria-label="Problems in this group"
                   >
-                    <span class="pill warn">{{
+                    <StatusPill tone="warn">{{
                       problemAt < 0
                         ? plural(problemFiles.length, "problem")
                         : `Problem ${problemAt + 1} of ${problemFiles.length}`
-                    }}</span>
-                    <button class="btn" type="button" data-step="-1" aria-label="Previous problem" @click="step(-1)">
+                    }}</StatusPill>
+                    <ActionButton data-step="-1" aria-label="Previous problem" @click="step(-1)">
                       Previous
-                    </button>
-                    <button class="btn" type="button" data-step="1" aria-label="Next problem" @click="step(1)">
+                    </ActionButton>
+                    <ActionButton data-step="1" aria-label="Next problem" @click="step(1)">
                       Next
-                    </button>
+                    </ActionButton>
                   </span>
                 </span>
-              </div>
-              <div
+              </FileRow>
+              <FileRow
                 v-for="file in group.files"
                 :key="file.id"
-                class="file"
-                :class="{ problem: isProblem(file), at: editing === file.id && isProblem(file) }"
+                :problem="isProblem(file)"
+                :current="editing === file.id && isProblem(file)"
                 :data-file="file.id"
               >
                 <span class="pick">
-                  <input
+                  <TickBox
                     v-if="canMove"
-                    v-model="picked"
-                    type="checkbox"
+                    :checked="picked.includes(file.id)"
                     :value="file.id"
                     :aria-label="`Select ${file.source}`"
+                    @change="pickFile(file.id, ($event.target as HTMLInputElement).checked)"
                   />
-                  <button
+                  <EpisodeCode
                     v-if="group.kind === 'tv'"
-                    class="ep"
-                    type="button"
                     v-tip="'Change season or episode'"
+                    editable
+                    :problem="isProblem(file)"
                     :aria-label="`${file.label}: change season or episode for ${file.source}`"
                     :aria-expanded="editing === file.id"
                     @click="edit(file)"
                   >
                     {{ file.label }}
-                  </button>
-                  <span v-else class="ep">{{ file.label }}</span>
+                  </EpisodeCode>
+                  <EpisodeCode v-else :problem="isProblem(file)">{{ file.label }}</EpisodeCode>
                 </span>
-                <span v-tip="file.path" class="path muted"
-                  ><span class="dir">{{ split(file.source)[0] }}</span
-                  ><span class="base">{{ split(file.source)[1] }}</span></span
-                >
+                <FilePath :path="file.source" :tip="file.path" muted />
                 <span v-if="file.excluded"
                   ><span class="muted">Left out of the next batch. </span>
-                  <button class="btn" type="button" @click="run(() => api.exclude(file.id, false))">
+                  <ActionButton @click="run(() => api.exclude(file.id, false))">
                     Include again
-                  </button></span
+                  </ActionButton></span
                 >
-                <span v-else-if="file.issue" class="issue">{{ file.issue }}</span>
-                <span v-else-if="file.target" v-tip="file.target" class="path"
-                  ><span class="dir muted">{{ split(file.target)[0] }}</span
-                  ><span class="base">{{ split(file.target)[1] }}</span></span
-                >
+                <IssueText v-else-if="file.issue" :strong="editing === file.id">{{ file.issue }}</IssueText>
+                <FilePath v-else-if="file.target" :path="file.target" />
                 <span v-else class="muted">Appears once a match is chosen.</span>
                 <form
                   v-if="editing === file.id && (group.kind === 'tv' || isProblem(file))"
@@ -924,45 +837,43 @@ async function search() {
                   <template v-if="group.kind === 'tv'">
                   <label
                     >Season
-                    <input v-model="numbers.season" class="input" type="number" min="0" max="999" placeholder="none"
-                      :aria-invalid="numbersTried && numberErrors.season ? 'true' : undefined" aria-describedby="numbers-error"
+                    <TextInput v-model="numbers.season" type="number" min="0" max="999" placeholder="none"
+                      :invalid="numbersTried && !!numberErrors.season" aria-describedby="numbers-error"
                   /></label>
                   <label
                     >Episode
-                    <input v-model="numbers.episode" class="input" type="number" min="1" max="9999" aria-required="true"
-                      :aria-invalid="numbersTried && numberErrors.episode ? 'true' : undefined" aria-describedby="numbers-error"
+                    <TextInput v-model="numbers.episode" type="number" min="1" max="9999" aria-required="true"
+                      :invalid="numbersTried && !!numberErrors.episode" aria-describedby="numbers-error"
                   /></label>
                   <label
                     ><span aria-hidden="true">to</span
                     ><span class="sr-only">Last episode, for a multi-episode file</span>
-                    <input v-model="numbers.episodeEnd" class="input" type="number" min="2" max="9999" placeholder="single"
-                      :aria-invalid="numbersTried && numberErrors.episodeEnd ? 'true' : undefined" aria-describedby="numbers-error"
+                    <TextInput v-model="numbers.episodeEnd" type="number" min="2" max="9999" placeholder="single"
+                      :invalid="numbersTried && !!numberErrors.episodeEnd" aria-describedby="numbers-error"
                   /></label>
-                  <span v-if="numbersError" id="numbers-error" class="issue bad" role="alert">{{
+                  <IssueText v-if="numbersError" id="numbers-error" bad role="alert">{{
                     numbersError
-                  }}</span>
+                  }}</IssueText>
                   </template>
                   <template v-if="isProblem(file)">
                     <!-- Both move on to the next problem. -->
-                    <button v-if="group.kind === 'tv'" class="btn primary" type="submit" :disabled="busy">
+                    <ActionButton v-if="group.kind === 'tv'" variant="primary" type="submit" :disabled="busy">
                       Save
-                    </button>
-                    <button
-                      class="btn"
-                      type="button"
+                    </ActionButton>
+                    <ActionButton
                       v-tip="'Leave this file out of the batch'"
                       :disabled="busy"
                       @click="leaveOut(file.id)"
                     >
                       Skip
-                    </button>
+                    </ActionButton>
                   </template>
                   <template v-else>
-                    <button class="btn primary" type="submit" :disabled="busy">Save</button>
-                    <button class="btn quiet" type="button" @click="closeEdit(file.id)">Cancel</button>
+                    <ActionButton variant="primary" type="submit" :disabled="busy">Save</ActionButton>
+                    <ActionButton variant="quiet" @click="closeEdit(file.id)">Cancel</ActionButton>
                   </template>
                 </form>
-              </div>
+              </FileRow>
             </div>
           </div>
 
@@ -970,62 +881,34 @@ async function search() {
         <p v-else class="muted">No groups in this view.</p>
       </SplitView>
 
-      <div class="foot">
-        <div class="row">
-          <button class="btn" type="button" :disabled="store.busy" @click="run(api.clear)">
-            Clear queue
-          </button>
+      <StepFooter>
+        <template #back>
+          <ActionButton :disabled="store.busy" @click="run(api.clear)">Clear queue</ActionButton>
           <template v-if="store.queue.lookups">
             <span class="muted"
               >Looking up matches: {{ store.queue.lookups.done }} of
               {{ plural(store.queue.lookups.total, "group") }} done</span
             >
-            <button class="btn" type="button" @click="run(api.cancelLookups).then(() => announce('Lookups cancelled.'))">
+            <ActionButton @click="run(api.cancelLookups).then(() => announce('Lookups cancelled.'))">
               Cancel lookups
-            </button>
+            </ActionButton>
           </template>
           <span v-else class="muted">
             {{ plural(fileCount, "file") }} in {{ plural(store.queue.groups.length, "group") }}
           </span>
-        </div>
-        <div class="row">
-          <span v-if="waiting" class="muted">{{ plural(waiting, "group") }} left to confirm</span>
-          <button
-            v-if="suggested"
-            class="btn"
-            type="button"
-            :disabled="store.busy"
-            @click="confirmAll"
-          >
-            Confirm {{ suggested }} suggested
-          </button>
-          <button
-            class="btn primary"
-            type="button"
-            :class="{ off: !readyFiles || !!waiting }"
-            :disabled="!readyFiles || !!waiting"
-            @click="go('preview')"
-          >
-            Preview changes
-          </button>
-        </div>
-      </div>
-    <dialog
-      ref="details"
-      class="help facts"
-      aria-labelledby="details-title"
-      @close="detailed = null"
-    >
+        </template>
+        <span v-if="waiting" class="muted">{{ plural(waiting, "group") }} left to confirm</span>
+        <ActionButton v-if="suggested" :disabled="store.busy" @click="confirmAll">
+          Confirm {{ suggested }} suggested
+        </ActionButton>
+        <ActionButton variant="primary" :unavailable="!readyFiles || !!waiting" @click="go('preview')">
+          Preview changes
+        </ActionButton>
+      </StepFooter>
+    <AppDialog ref="details" wide labelledby="details-title" @close="detailed = null">
       <template v-if="detail">
         <div class="about">
-          <img
-            v-if="detail.posterUrl && !broken.includes(idOf(detail))"
-            class="poster"
-            :src="thumb(detail)"
-            alt=""
-            referrerpolicy="no-referrer"
-            @error="posterFailed($event, detail)"
-          />
+          <PosterImage large :src="detail.posterUrl" :thumb="detail.posterThumbUrl" />
           <div>
             <h2 id="details-title" class="title">
               {{ detail.title }}
@@ -1038,26 +921,62 @@ async function search() {
           <template v-for="[name, value] in facts" :key="name">
             <dt class="label">{{ name }}</dt>
             <dd v-if="name === 'Page'">
-              <button class="link" type="button" @click="api.openSourcePage(String(value))">
+              <WebLink @click="api.openSourcePage(String(value))">
                 {{ String(value).replace(/^https:\/\/(www\.)?/, "") }}
-              </button>
+              </WebLink>
             </dd>
             <dd v-else :class="{ mono: name.endsWith('ID') }">{{ value }}</dd>
           </template>
         </dl>
         <form class="row" method="dialog">
-          <button
+          <ActionButton
             v-if="group?.chosen !== detailedAt"
-            class="btn primary"
-            type="button"
+            variant="primary"
             :disabled="busy"
             @click="useDetailed"
           >
             Use this
-          </button>
-          <button class="btn" type="submit">Close</button>
+          </ActionButton>
+          <ActionButton type="submit">Close</ActionButton>
         </form>
       </template>
-    </dialog>
+    </AppDialog>
   </div>
 </template>
+
+<style scoped>
+/* The top of the queue: its heading with the ways to add to it, then the list's views as tabs
+   resting on the rule above the list. */
+.queue{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--space-nested)}
+.views{display:flex;gap:var(--space-nested);align-items:center}
+.skipped>div{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--space-dense);padding:var(--space-nested) 0}
+.skipped>div+div{border-top:1px solid var(--color-outline-subtle)}
+/* A list item with a tick box beside it; the row takes over the item's rule, background and
+   selected edge. */
+.tickrow{display:grid;grid-template-columns:auto minmax(0,1fr);border-bottom:1px solid var(--color-outline-subtle)}
+.tickrow:hover{background-image:linear-gradient(var(--color-hover) 0 0)}
+.tickrow:has([aria-current="true"]){background-color:var(--color-accent-soft);outline:1px solid var(--color-accent);outline-offset:-1px}
+.tickrow .pick{padding-left:var(--space-surface)}
+/* The top of the selected group's pane, on the list's own colour and flush with the pane's edges. */
+.band{row-gap:var(--space-nested);padding-block:var(--space-surface);background:var(--color-surface-raised);border-bottom:1px solid var(--color-outline-subtle)}
+/* The group's actions keep to the right when the row wraps. */
+.band .actions{justify-self:end;justify-content:flex-end}
+.band .sort{flex:1 1 auto;justify-content:flex-end}
+/* The group on the left, wrapping within its own column so its actions stay at the top right. */
+.grouprow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--space-nested) var(--space-surface);align-items:start}
+/* Finding the match, under a rule that runs the width of the pane. */
+.matching{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--space-nested);padding:var(--space-nested) var(--space-surface) 0;border-top:1px solid var(--color-outline-subtle)}
+.input.search{flex:0 1 220px;width:220px}
+.hint{font:var(--font-body-sm);font-weight:500;color:var(--color-on-surface-muted)}
+.strip{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(240px,320px);justify-content:start;gap:var(--space-nested);overflow-x:auto;padding-bottom:var(--space-dense)}
+/* A row scrolled to stops clear of the column headings. */
+.files{display:grid;grid-template-columns:max-content minmax(0,2fr) minmax(0,3fr);grid-auto-rows:max-content;align-content:start;column-gap:var(--space-surface);scroll-padding-top:calc(var(--size-control) + var(--space-nested))}
+.edit{grid-column:2/-1}
+.about{display:grid;grid-template-columns:auto minmax(0,1fr);gap:var(--space-surface);align-items:start}
+.about>div{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--space-nested)}
+.about p{color:var(--color-on-surface-muted)}
+@media (max-width:760px){
+  .files{grid-template-columns:minmax(0,1fr)}
+  .grouprow{grid-template-columns:minmax(0,1fr)}
+}
+</style>

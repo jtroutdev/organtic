@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import ActionButton from "../components/ActionButton.vue";
+import DropZone from "../components/DropZone.vue";
+import PageHeading from "../components/PageHeading.vue";
 import { api, go, plural, run, store } from "../store.ts";
 
 const fileCount = computed(() =>
@@ -15,35 +18,25 @@ async function add(action: () => Promise<unknown>) {
 <template>
   <div class="page">
     <div class="above">
-      <div class="head">
-        <div>
-          <h1>Add files</h1>
-          <p v-if="store.queue.groups.length">
-            {{ plural(fileCount, "file") }} in
-            {{ plural(store.queue.groups.length, "group") }} already in the queue.
-          </p>
-          <p v-else>Nothing in the queue.</p>
-        </div>
-      </div>
+      <PageHeading title="Add files">
+        <template v-if="store.queue.groups.length">
+          {{ plural(fileCount, "file") }} in
+          {{ plural(store.queue.groups.length, "group") }} already in the queue.
+        </template>
+        <template v-else>Nothing in the queue.</template>
+      </PageHeading>
     </div>
-    <div class="drop">
+    <DropZone>
       <h2>Drop a folder or files here</h2>
       <p class="muted">
         Video files are grouped by show or film and matched for you to confirm.
       </p>
       <div class="row">
-        <button
-          class="btn primary"
-          type="button"
-          :disabled="store.busy"
-          @click="add(api.addFolder)"
-        >
+        <ActionButton variant="primary" :disabled="store.busy" @click="add(api.addFolder)">
           Add folder
-        </button>
-        <button class="btn" type="button" :disabled="store.busy" @click="add(api.addFiles)">
-          Add files
-        </button>
+        </ActionButton>
+        <ActionButton :disabled="store.busy" @click="add(api.addFiles)">Add files</ActionButton>
       </div>
-    </div>
+    </DropZone>
   </div>
 </template>

@@ -365,6 +365,8 @@ Three radii. `sm` 4px for small things: tick boxes, tags, key caps, posters, opt
 
 ## Components
 
+Each component is a Vue file in `src/components` and carries its own rules in a scoped style block; a page does the same for what only it lays out. `src/style.css` holds what the whole app shares: tokens, the reset, element defaults and the classes any page may use. Nothing is styled inline. A value that comes from data reaches CSS as a class, an attribute or a native element's own value; the one exception is a position worked out in script, such as the tooltip's.
+
 All interactive components answer the same states.
 
 - **Hover** lays the hover layer over the control and brightens its edge to on surface muted. The control lifts, on any surface, including a selected row.

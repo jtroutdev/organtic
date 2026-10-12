@@ -1,8 +1,18 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from "vue";
+import { computed } from "vue";
 import type { PreviewItem } from "../../core/types.ts";
+import ActionButton from "../components/ActionButton.vue";
+import GroupHeading from "../components/GroupHeading.vue";
+import IssueText from "../components/IssueText.vue";
 import ListItem from "../components/ListItem.vue";
+import NoticeBanner from "../components/NoticeBanner.vue";
+import OptionsMenu from "../components/OptionsMenu.vue";
+import PageHeading from "../components/PageHeading.vue";
 import SplitView from "../components/SplitView.vue";
+import StepFooter from "../components/StepFooter.vue";
+import SummaryStats from "../components/SummaryStats.vue";
+import SurfaceCard from "../components/SurfaceCard.vue";
+import TreeRow from "../components/TreeRow.vue";
 import { api, apply, go, plural, run, saveSettings, store } from "../store.ts";
 
 const preview = computed(() => store.preview);
@@ -67,33 +77,32 @@ const options = [
   ["removeEmpty", "Remove empty folders", "Only folders left with nothing in them"],
   ["artwork", "Download artwork", "Posters and backdrops, saved in each title's folder; needs organising into folders"],
 ] as const;
-const optionsOn = computed(
-  () => options.filter(([key]) => store.settings[key]).length,
+const menu = computed(() =>
+  options.map(([key, label, note]) => ({ key, label, note, checked: store.settings[key] })),
 );
-// The menu stays open while options are ticked. Escape, a click outside it or its button closes it.
-const menu = ref<HTMLElement>();
-const menuOpen = ref(false);
-function closeMenu(refocus: boolean) {
-  menuOpen.value = false;
-  if (refocus) menu.value?.querySelector("button")?.focus();
-}
-const outside = (event: PointerEvent) => {
-  if (!menu.value?.contains(event.target as Node)) closeMenu(false);
-};
-const escape = (event: KeyboardEvent) => {
-  if (event.key === "Escape") closeMenu(true);
-};
-function listen(on: boolean) {
-  const change = on ? document.addEventListener : document.removeEventListener;
-  change.call(document, "pointerdown", outside as EventListener);
-  change.call(document, "keydown", escape as EventListener);
-}
-watch(menuOpen, listen);
-onUnmounted(() => listen(false));
-async function toggle(key: (typeof options)[number][0], box: HTMLInputElement) {
+/** What the batch will do, as counts; a kind of change with none is left out. */
+const stats = computed(() => {
+  const counts = preview.value!.counts;
+  const one = (count: number, single: string, many: string) => (count === 1 ? single : many);
+  const all: [number, string, boolean?][] = [
+    [counts.videos, `${one(counts.videos, "video", "videos")} moved`, true],
+    [counts.subtitles, "subtitles", true],
+    [counts.folders, "folders created", true],
+    [counts.renamed, `${one(counts.renamed, "folder", "folders")} renamed`],
+    [counts.removed, `empty ${one(counts.removed, "folder", "folders")} removed`],
+    [counts.artwork, one(counts.artwork, "image", "images")],
+    [counts.metadata, "metadata files"],
+    [counts.left, `left where ${one(counts.left, "it is", "they are")}`],
+  ];
+  return all
+    .filter(([count, , always]) => always || count)
+    .map(([count, label]) => [count, label] as const);
+});
+async function toggle(key: string, box: HTMLInputElement) {
+  const name = key as (typeof options)[number][0];
   // A change made while another is being saved is put back, so the tick never disagrees with the setting.
-  if (store.busy || !(await saveSettings({ [key]: box.checked })))
-    box.checked = store.settings[key];
+  if (store.busy || !(await saveSettings({ [name]: box.checked })))
+    box.checked = store.settings[name];
 }
 </script>
 
@@ -101,141 +110,80 @@ async function toggle(key: (typeof options)[number][0], box: HTMLInputElement) {
   <div class="page">
     <template v-if="store.applied">
       <div class="above">
-        <div class="head">
-          <div>
-            <h1>Changes applied</h1>
-            <p>
-              {{ store.applied.completed }} operations completed inside
-              <span class="mono">{{ store.applied.destination }}</span
-              >.
-            </p>
-          </div>
-        </div>
-        <div class="banner ok">
-          <span>Everything moved. The original names are kept in History.</span>
-        </div>
-        <div v-if="store.applied.warnings.length" class="banner bad" role="status">
-          <span
-            ><b
-              >{{ plural(store.applied.warnings.length, "change") }} could not be
-              made.</b
-            >
-            Everything else was applied.
-            <span
-              v-for="warning in store.applied.warnings"
-              :key="warning"
-              class="mono block"
-              >{{ warning }}</span
-            ></span
+        <PageHeading title="Changes applied">
+          {{ store.applied.completed }} operations completed inside
+          <span class="mono">{{ store.applied.destination }}</span
+          >.
+        </PageHeading>
+        <NoticeBanner tone="ok"
+          >Everything moved. The original names are kept in History.</NoticeBanner
+        >
+        <NoticeBanner v-if="store.applied.warnings.length" tone="bad" role="status"
+          ><b
+            >{{ plural(store.applied.warnings.length, "change") }} could not be
+            made.</b
           >
-        </div>
+          Everything else was applied.
+          <span
+            v-for="warning in store.applied.warnings"
+            :key="warning"
+            class="mono block"
+            >{{ warning }}</span
+          ></NoticeBanner
+        >
       </div>
-      <div class="card">
+      <SurfaceCard>
         <p v-if="store.queue.groups.length">
           {{ plural(store.queue.groups.length, "group") }} with files that were
           not renamed
           {{ store.queue.groups.length === 1 ? "is" : "are" }} still in the queue.
         </p>
         <p v-else>The queue is empty.</p>
-      </div>
-      <div class="foot">
-        <button class="btn" type="button" @click="go('history')">
-          Open History to undo
-        </button>
-        <button class="btn primary" type="button" @click="go('review')">
-          Back to the queue
-        </button>
-      </div>
+      </SurfaceCard>
+      <StepFooter>
+        <template #back>
+          <ActionButton @click="go('history')">Open History to undo</ActionButton>
+        </template>
+        <ActionButton variant="primary" @click="go('review')">Back to the queue</ActionButton>
+      </StepFooter>
     </template>
 
     <template v-else-if="!preview">
       <div class="above">
-        <div class="head">
-          <div>
-            <h1>Preview changes</h1>
-            <p>Nothing to preview yet.</p>
-          </div>
-        </div>
+        <PageHeading title="Preview changes">Nothing to preview yet.</PageHeading>
       </div>
-      <div class="card">
+      <SurfaceCard>
         <p>
           Confirm at least one group in Matching that has a matched file to see its
           new names here.
         </p>
         <div>
-          <button class="btn primary" type="button" @click="go('review')">
-            Go to Matching
-          </button>
+          <ActionButton variant="primary" @click="go('review')">Go to Matching</ActionButton>
         </div>
-      </div>
+      </SurfaceCard>
     </template>
 
     <template v-else>
       <div class="above">
-        <div class="head">
-          <div>
-            <h1>Preview changes</h1>
-            <p>
-              Nothing has moved yet.
-              {{
-                preview.blocked
-                  ? "Resolve the problems below to continue."
-                  : "Existing files are never overwritten."
-              }}
-            </p>
-          </div>
-        </div>
-        <div class="card bar">
-          <div class="stats">
-            <span><b>{{ preview.counts.videos }}</b>{{ preview.counts.videos === 1 ? "video" : "videos" }} moved</span>
-            <span><b>{{ preview.counts.subtitles }}</b>subtitles</span>
-            <span><b>{{ preview.counts.folders }}</b>folders created</span>
-            <span v-if="preview.counts.renamed"><b>{{ preview.counts.renamed }}</b>{{ preview.counts.renamed === 1 ? "folder" : "folders" }} renamed</span>
-            <span v-if="preview.counts.removed"><b>{{ preview.counts.removed }}</b>empty {{ preview.counts.removed === 1 ? "folder" : "folders" }} removed</span>
-            <span v-if="preview.counts.artwork"><b>{{ preview.counts.artwork }}</b>{{ preview.counts.artwork === 1 ? "image" : "images" }}</span>
-            <span v-if="preview.counts.metadata"><b>{{ preview.counts.metadata }}</b>metadata files</span>
-            <span v-if="preview.counts.left"><b>{{ preview.counts.left }}</b>left where {{ preview.counts.left === 1 ? "it is" : "they are" }}</span>
-          </div>
-          <div ref="menu" class="menu">
-            <button
-              class="btn"
-              type="button"
-              aria-haspopup="true"
-              aria-controls="preview-options"
-              :aria-expanded="menuOpen"
-              @click="menuOpen = !menuOpen"
-            >
-              Options<span class="n"
-                >{{ optionsOn }}<span class="sr-only"> turned on</span></span
-              >
-            </button>
-            <div
-              v-if="menuOpen"
-              id="preview-options"
-              class="pop"
-              role="group"
-              aria-label="Options"
-            >
-              <label v-for="[key, label, note] in options" :key="key" v-tip="note" class="opt">
-                <input
-                  type="checkbox"
-                  :checked="store.settings[key]"
-                  @change="toggle(key, $event.target as HTMLInputElement)"
-                />
-                {{ label }}<span class="sr-only">. {{ note }}</span>
-              </label>
-            </div>
-          </div>
-        </div>
-        <div v-if="clashes" class="banner bad">
-          <span
-            ><b>{{ plural(clashes, "file") }} cannot be renamed as planned.</b>
-            Leave the affected files out, or change the match in Matching.</span
-          >
-        </div>
-        <div v-for="error in preview.errors" :key="error" class="banner bad">
-          <span>{{ error }}</span>
-        </div>
+        <PageHeading title="Preview changes">
+          Nothing has moved yet.
+          {{
+            preview.blocked
+              ? "Resolve the problems below to continue."
+              : "Existing files are never overwritten."
+          }}
+        </PageHeading>
+        <SurfaceCard bar>
+          <SummaryStats :stats="stats" />
+          <OptionsMenu id="preview-options" label="Options" :options="menu" @toggle="toggle" />
+        </SurfaceCard>
+        <NoticeBanner v-if="clashes" tone="bad"
+          ><b>{{ plural(clashes, "file") }} cannot be renamed as planned.</b>
+          Leave the affected files out, or change the match in Matching.</NoticeBanner
+        >
+        <NoticeBanner v-for="error in preview.errors" :key="error" tone="bad">{{
+          error
+        }}</NoticeBanner>
       </div>
 
       <SplitView v-if="group" :current="group.key" list="Confirmed groups" detail="Changes for the selected group">
@@ -254,36 +202,32 @@ async function toggle(key: (typeof options)[number][0], box: HTMLInputElement) {
           </ListItem>
         </template>
         <div class="row between">
-          <div class="row grouphead">
-            <span class="kind">{{ group.kind === "tv" ? "TV" : "FILM" }}</span>
-            <h2 class="title">
-              {{ group.title }}
-              <span class="muted">({{ group.year ?? "year unknown" }})</span></h2
-            >
-            <span class="pill" :class="hasProblem(group.key) ? 'bad' : 'ok'">{{
-              hasProblem(group.key) ? "Needs attention" : "Ready"
-            }}</span>
-          </div>
+          <GroupHeading
+            :kind="group.kind"
+            :tone="hasProblem(group.key) ? 'bad' : 'ok'"
+            :status="hasProblem(group.key) ? 'Needs attention' : 'Ready'"
+          >
+            {{ group.title }}
+            <span class="muted">({{ group.year ?? "year unknown" }})</span>
+          </GroupHeading>
           <div v-if="store.settings.organize" class="dest">
             <span class="label">Organise inside</span>
             <span class="mono">{{ store.queue.destination }}</span>
-            <button
+            <ActionButton
               v-if="store.queue.destinationChanged"
-              class="btn"
-              type="button"
               :disabled="store.busy"
               @click="run(api.resetDestination)"
             >
               Use the added folder
-            </button>
-            <button class="btn" type="button" :disabled="store.busy" @click="run(api.chooseDestination)">
+            </ActionButton>
+            <ActionButton :disabled="store.busy" @click="run(api.chooseDestination)">
               Change
-            </button>
+            </ActionButton>
           </div>
         </div>
-        <p v-for="problem in group.problems" :key="problem" class="issue bad">
+        <IssueText v-for="problem in group.problems" :key="problem" as="p" bad>
           {{ problem }}
-        </p>
+        </IssueText>
         <div class="fill">
           <h3 class="label">
             {{ shownAbove ? "New location" : `Inside ${preview.destination}` }}
@@ -292,29 +236,26 @@ async function toggle(key: (typeof options)[number][0], box: HTMLInputElement) {
             <span v-if="!rows.length" class="muted"
               >Nothing from this group will change.</span
             >
-            <div
+            <TreeRow
               v-for="(row, index) in rows"
               :key="index"
-              class="node"
-              role="listitem"
-              :class="{ dir: !row.item, clash: row.item?.problem }"
-              :style="{ '--depth': row.depth }"
+              :depth="row.depth"
+              :folder="!row.item"
+              :clash="!!row.item?.problem"
             >
               <span>{{ row.name }}</span>
               <span v-if="row.isNew" class="tag">new folder</span>
               <span v-if="row.was" class="tag">renamed</span>
               <span v-if="row.was" class="src">from {{ row.was }}/</span>
               <template v-if="row.item">
-                <button
+                <ActionButton
                   v-if="row.item.problem || row.item.note"
-                  class="btn"
-                  type="button"
                   :disabled="store.busy"
                   :aria-label="`Leave this one out: ${row.item.from ?? row.name}`"
                   @click="run(() => api.exclude(row.item!.fileId, true))"
                 >
                   Leave this one out
-                </button>
+                </ActionButton>
                 <span class="src"
                   >{{
                     row.item.from
@@ -326,7 +267,7 @@ async function toggle(key: (typeof options)[number][0], box: HTMLInputElement) {
                   ><template v-if="row.item.problem"> · {{ row.item.problem }}</template></span
                 >
               </template>
-            </div>
+            </TreeRow>
           </div>
         </div>
         <div v-if="group.left.length" class="fill">
@@ -345,7 +286,7 @@ async function toggle(key: (typeof options)[number][0], box: HTMLInputElement) {
         </div>
       </SplitView>
 
-      <details v-if="preview.removedFolders.length" class="card">
+      <SurfaceCard v-if="preview.removedFolders.length" as="details">
         <summary>
           {{ plural(preview.removedFolders.length, "folder") }} left empty will
           be removed
@@ -363,21 +304,29 @@ async function toggle(key: (typeof options)[number][0], box: HTMLInputElement) {
           A folder that still holds anything, such as samples, artwork or notes,
           is kept. Undo puts removed folders back.
         </p>
-      </details>
-      <div class="foot">
-        <button class="btn" type="button" @click="go('review')">
-          Back to Matching
-        </button>
-        <button
-          class="btn primary"
-          type="button"
-          :class="{ off: preview.blocked || !api.desktop }"
-          :disabled="preview.blocked || store.busy || !api.desktop"
+      </SurfaceCard>
+      <StepFooter>
+        <template #back>
+          <ActionButton @click="go('review')">Back to Matching</ActionButton>
+        </template>
+        <ActionButton
+          variant="primary"
+          :unavailable="preview.blocked || !api.desktop"
+          :disabled="store.busy"
           @click="apply"
         >
           Apply {{ preview.counts.operations }} changes
-        </button>
-      </div>
+        </ActionButton>
+      </StepFooter>
     </template>
   </div>
 </template>
+
+<style scoped>
+.dest{display:flex;flex-wrap:wrap;gap:var(--space-dense) var(--space-nested);align-items:center}
+.dest .mono{min-width:0}
+.tree{font:var(--font-code-md);font-weight:400;display:grid;grid-template-columns:minmax(0,1fr);grid-auto-rows:max-content;align-content:start;overflow-wrap:anywhere}
+.tag{font:var(--font-label-sm);letter-spacing:var(--tracking-label);text-transform:uppercase;color:var(--color-success)}
+.src{flex-basis:100%;color:var(--color-on-surface-muted)}
+.leftover{padding-top:var(--space-dense)}
+</style>
