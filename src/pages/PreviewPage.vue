@@ -8,14 +8,19 @@ import ListItem from "../components/ListItem.vue";
 import NoticeBanner from "../components/NoticeBanner.vue";
 import OptionsMenu from "../components/OptionsMenu.vue";
 import PageHeading from "../components/PageHeading.vue";
+import SkeletonBlock from "../components/SkeletonBlock.vue";
 import SplitView from "../components/SplitView.vue";
 import StepFooter from "../components/StepFooter.vue";
 import SummaryStats from "../components/SummaryStats.vue";
 import SurfaceCard from "../components/SurfaceCard.vue";
 import TreeRow from "../components/TreeRow.vue";
-import { api, apply, go, plural, run, saveSettings, store } from "../store.ts";
+import { api, apply, confirmed, go, plural, run, saveSettings, store } from "../store.ts";
 
 const preview = computed(() => store.preview);
+// Until the first preview is back the page keeps its shape, with outlines where the names will be.
+const loading = computed(() => !store.applied && !preview.value && store.previewLoading);
+/** One outlined row for each group the preview is expected to list, up to a screenful. */
+const expected = computed(() => Math.min(confirmed().length, 8));
 const hasProblem = (key: string) => {
   const group = preview.value?.groups.find((item) => item.key === key);
   return !!group && (group.problems.length > 0 || group.items.some((item) => item.problem));
@@ -107,7 +112,7 @@ async function toggle(key: string, box: HTMLInputElement) {
 </script>
 
 <template>
-  <div class="page">
+  <div class="page" :aria-busy="loading">
     <template v-if="store.applied">
       <div class="above">
         <PageHeading title="Changes applied">
@@ -148,7 +153,7 @@ async function toggle(key: string, box: HTMLInputElement) {
       </StepFooter>
     </template>
 
-    <template v-else-if="!preview">
+    <template v-else-if="!preview && !loading">
       <div class="above">
         <PageHeading title="Preview changes">Nothing to preview yet.</PageHeading>
       </div>
@@ -166,32 +171,42 @@ async function toggle(key: string, box: HTMLInputElement) {
     <template v-else>
       <div class="above">
         <PageHeading title="Preview changes">
-          Nothing has moved yet.
-          {{
-            preview.blocked
-              ? "Resolve the problems below to continue."
-              : "Existing files are never overwritten."
-          }}
+          <template v-if="!preview">Working out the new names.</template>
+          <template v-else>
+            Nothing has moved yet.
+            {{
+              preview.blocked
+                ? "Resolve the problems below to continue."
+                : "Existing files are never overwritten."
+            }}
+          </template>
         </PageHeading>
         <SurfaceCard bar>
-          <SummaryStats :stats="stats" />
+          <SummaryStats v-if="preview" :stats="stats" />
+          <div v-else class="row ghoststats">
+            <SkeletonBlock v-for="n in 3" :key="n" width="short" />
+          </div>
           <OptionsMenu id="preview-options" label="Options" :options="menu" @toggle="toggle" />
         </SurfaceCard>
         <NoticeBanner v-if="clashes" tone="bad"
           ><b>{{ plural(clashes, "file") }} cannot be renamed as planned.</b>
           Leave the affected files out, or change the match in Matching.</NoticeBanner
         >
-        <NoticeBanner v-for="error in preview.errors" :key="error" tone="bad">{{
+        <NoticeBanner v-for="error in preview?.errors" :key="error" tone="bad">{{
           error
         }}</NoticeBanner>
       </div>
 
-      <SplitView v-if="group" :current="group.key" list="Confirmed groups" detail="Changes for the selected group">
+      <SplitView v-if="group || loading" :current="group?.key" list="Confirmed groups" detail="Changes for the selected group">
         <template #side>
+          <div v-for="n in loading ? expected : 0" :key="n" class="ghost">
+            <SkeletonBlock />
+            <SkeletonBlock width="short" />
+          </div>
           <ListItem
-            v-for="item in preview.groups"
+            v-for="item in preview?.groups"
             :key="item.key"
-            :current="item.key === group.key"
+            :current="item.key === group?.key"
             :tone="hasProblem(item.key) ? 'bad' : 'ok'"
             :note="hasProblem(item.key) ? 'Needs attention' : plural(item.items.length, 'change')"
             :count="item.items.length"
@@ -202,7 +217,9 @@ async function toggle(key: string, box: HTMLInputElement) {
           </ListItem>
         </template>
         <div class="row between">
+          <div v-if="!group" class="ghosthead"><SkeletonBlock /></div>
           <GroupHeading
+            v-else
             :kind="group.kind"
             :tone="hasProblem(group.key) ? 'bad' : 'ok'"
             :status="hasProblem(group.key) ? 'Needs attention' : 'Ready'"
@@ -225,12 +242,23 @@ async function toggle(key: string, box: HTMLInputElement) {
             </ActionButton>
           </div>
         </div>
-        <IssueText v-for="problem in group.problems" :key="problem" as="p" bad>
+        <IssueText v-for="problem in group?.problems" :key="problem" as="p" bad>
           {{ problem }}
         </IssueText>
-        <div class="fill">
+        <div v-if="!group" class="fill" aria-hidden="true">
+          <div class="label"><SkeletonBlock width="short" /></div>
+          <div class="tree">
+            <TreeRow :depth="0" folder><SkeletonBlock /></TreeRow>
+            <TreeRow :depth="1" folder><SkeletonBlock width="short" /></TreeRow>
+            <TreeRow v-for="n in 4" :key="n" :depth="2">
+              <SkeletonBlock />
+              <span class="src"><SkeletonBlock width="long" /></span>
+            </TreeRow>
+          </div>
+        </div>
+        <div v-else class="fill">
           <h3 class="label">
-            {{ shownAbove ? "New location" : `Inside ${preview.destination}` }}
+            {{ shownAbove ? "New location" : `Inside ${preview?.destination}` }}
           </h3>
           <div class="tree scroll" role="list">
             <span v-if="!rows.length" class="muted"
@@ -270,13 +298,13 @@ async function toggle(key: string, box: HTMLInputElement) {
             </TreeRow>
           </div>
         </div>
-        <div v-if="group.left.length" class="fill">
+        <div v-if="group?.left.length" class="fill">
           <h3 class="label">
-            Left where {{ group.left.length === 1 ? "it is" : "they are" }}
+            Left where {{ group?.left.length === 1 ? "it is" : "they are" }}
           </h3>
           <div class="scroll">
             <div
-              v-for="name in group.left"
+              v-for="name in group?.left"
               :key="name"
               class="mono muted leftover"
             >
@@ -286,14 +314,14 @@ async function toggle(key: string, box: HTMLInputElement) {
         </div>
       </SplitView>
 
-      <SurfaceCard v-if="preview.removedFolders.length" as="details">
+      <SurfaceCard v-if="preview?.removedFolders.length" as="details">
         <summary>
-          {{ plural(preview.removedFolders.length, "folder") }} left empty will
+          {{ plural(preview?.removedFolders.length ?? 0, "folder") }} left empty will
           be removed
         </summary>
         <div class="scroll capped">
           <div
-            v-for="folder in preview.removedFolders"
+            v-for="folder in preview?.removedFolders"
             :key="folder"
             class="mono muted"
           >
@@ -311,11 +339,11 @@ async function toggle(key: string, box: HTMLInputElement) {
         </template>
         <ActionButton
           variant="primary"
-          :unavailable="preview.blocked || !api.desktop"
-          :disabled="store.busy"
+          :unavailable="preview?.blocked || !api.desktop"
+          :disabled="store.busy || !preview"
           @click="apply"
         >
-          Apply {{ preview.counts.operations }} changes
+          Apply {{ preview?.counts.operations }} changes
         </ActionButton>
       </StepFooter>
     </template>
@@ -329,4 +357,10 @@ async function toggle(key: string, box: HTMLInputElement) {
 .tag{font:var(--font-label-sm);letter-spacing:var(--tracking-label);text-transform:uppercase;color:var(--color-success)}
 .src{flex-basis:100%;color:var(--color-on-surface-muted)}
 .leftover{padding-top:var(--space-dense)}
+/* Outlines of what is on its way, each with the measure of the thing it stands in for: the
+   counts, a row of the list and the group's heading. */
+.ghoststats{gap:var(--space-dense) var(--space-surface)}
+.ghost{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--space-dense);padding:var(--space-nested) var(--space-surface);border-bottom:1px solid var(--color-outline-subtle)}
+.ghost>:last-child{font:var(--font-body-sm)}
+.ghosthead{display:grid;align-items:center;min-height:var(--size-control);font:var(--font-title-lg)}
 </style>

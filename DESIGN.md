@@ -373,7 +373,7 @@ All interactive components answer the same states.
 - **Pressed** lays the pressed layer instead. The primary button is the one exception: it has hover and pressed fills of its own, so its white label keeps its contrast.
 - **Focus** is a 2px accent ring, offset 2px outside the control, or drawn inside the row for list items.
 - **Unavailable** is 50% opacity with a not-allowed pointer, for a control that is off for a reason of its own.
-- **Busy** keeps the resting look and changes only the pointer. A running action never dims the screen. Waiting shows where it was started (the button) or where its result lands (a bar on the rule under a heading, a pulsing tally).
+- **Busy** keeps the resting look and changes only the pointer. A running action never dims the screen. Waiting shows where it was started (the button) or where its result lands (a bar on the rule under a heading, a pulsing tally, a skeleton).
 - **Invalid** gives an input an error edge and a sentence underneath that says why.
 
 **Button.** Default, primary and quiet. One primary per step. Quiet is for the least important action in a row; it has no fill or edge at rest and shows whatever surface it sits on, as do tabs, segments and the kind tag. Their tokens name the surface they are usually on. The compact button is for a value in a table row that opens an editor, such as an episode code.
@@ -399,6 +399,10 @@ Two selection idioms, never mixed: the **accent tint with a 1px accent edge** ma
 **Match card.** Poster, title, year, fit and actions. The chosen card takes the accent edge and tint.
 
 **File row.** Before and after side by side in mono. The problem being worked on is tinted warning soft from edge to edge.
+
+**Sort heading.** A column heading in `label-sm` that sorts by its column: ascending, then descending, then back to the list's own order. The column sorted by is on surface and shows a chevron that points up for ascending and down for descending. The chevron keeps its room on every heading, so headings never move. It is a plain text button, like a list view, so the heading row keeps its height.
+
+**Skeleton.** A bar in outline subtle that stands in for a line of text on its way, as tall as a line of the text around it, so what loads takes its place without anything moving. A page that is waiting keeps its real heading and controls and outlines only what it does not know yet. Skeletons are held back for 200ms, so a short wait shows none, then pulse; with reduced motion they are still.
 
 **Tooltip.** A short note about a control, on surface raised with the stronger outline and the overlay shadow, in `body-sm`. It shows for the pointer after a pause and for keyboard focus at once, and Escape dismisses it. Never use the `title` attribute: it is out of reach of the keyboard. A tooltip on cut-off text shows only while the text is cut off.
 

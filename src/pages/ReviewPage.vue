@@ -19,6 +19,7 @@ import ProgressBar from "../components/ProgressBar.vue";
 import SegmentedSet from "../components/SegmentedSet.vue";
 import SelectInput from "../components/SelectInput.vue";
 import SelectionBar from "../components/SelectionBar.vue";
+import SortHeading from "../components/SortHeading.vue";
 import SplitView from "../components/SplitView.vue";
 import StatusNote from "../components/StatusNote.vue";
 import StatusPill from "../components/StatusPill.vue";
@@ -362,9 +363,44 @@ async function edit(file: QueueFile) {
   row?.scrollIntoView({ block: "nearest" });
   row?.querySelector<HTMLElement>(".edit input, .edit button")?.focus();
 }
+// The files can be sorted by any column; a third press of a heading puts the queue's order back.
+type SortBy = "episode" | "source" | "target";
+const sort = ref<{ by: SortBy; down: boolean } | null>(null);
+function sortBy(by: SortBy) {
+  sort.value =
+    sort.value?.by !== by ? { by, down: false } : sort.value.down ? null : { by, down: true };
+  announce(
+    sort.value
+      ? `Sorted by ${{ episode: "episode", source: "current name", target: "new name" }[by]}, ${sort.value.down ? "descending" : "ascending"}.`
+      : "Back in the queue's order.",
+  );
+}
+const direction = (by: SortBy) =>
+  sort.value?.by === by ? (sort.value.down ? "desc" : "asc") : null;
+const names = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+/** The selected group's files in the order they are listed. */
+const files = computed(() => {
+  const all = group.value?.files ?? [];
+  const order = sort.value;
+  if (!order) return all;
+  const compare = {
+    episode: (a: QueueFile, b: QueueFile) =>
+      (a.numbers.season ?? 0) - (b.numbers.season ?? 0) ||
+      (a.numbers.episode ?? 0) - (b.numbers.episode ?? 0),
+    source: () => 0,
+    // A file with no new name yet goes after those that have one, whichever way the rest run.
+    target: (a: QueueFile, b: QueueFile) =>
+      a.target && b.target
+        ? names.compare(a.target, b.target)
+        : (order.down ? -1 : 1) * (Number(!a.target) - Number(!b.target)),
+  }[order.by];
+  return [...all].sort(
+    (a, b) => (order.down ? -1 : 1) * (compare(a, b) || names.compare(a.source, b.source)),
+  );
+});
 // Problems are walked like search results: one at a time, back and forth, each opening its form
 // where it sits in the list.
-const problemFiles = computed(() => group.value?.files.filter(isProblem) ?? []);
+const problemFiles = computed(() => files.value.filter(isProblem));
 const problemAt = computed(() =>
   problemFiles.value.findIndex((file) => file.id === editing.value),
 );
@@ -384,12 +420,12 @@ function step(by: 1 | -1) {
 /** Once a problem is dealt with: on to the next one down the list, wrapping round. */
 async function onward(fileId: string) {
   await nextTick();
-  const files = group.value?.files ?? [];
-  const from = files.findIndex((file) => file.id === fileId);
-  const next = [...files.slice(from + 1), ...files.slice(0, Math.max(from, 0))].find(isProblem);
+  const list = files.value;
+  const from = list.findIndex((file) => file.id === fileId);
+  const next = [...list.slice(from + 1), ...list.slice(0, Math.max(from, 0))].find(isProblem);
   if (next) return edit(next);
   // Still unsolved and the only one: stay on it.
-  if (files.some((file) => file.id === fileId && isProblem(file))) return;
+  if (list.some((file) => file.id === fileId && isProblem(file))) return;
   closeEdit(fileId);
   announce("No problems left in this group.");
 }
@@ -751,7 +787,7 @@ async function search() {
             </div>
             <div class="files scroll">
               <FileRow heading>
-                <label class="pick label">
+                <span class="pick label">
                   <TickBox
                     v-if="canMove && group.files.length > 1"
                     aria-label="Select all files"
@@ -759,11 +795,25 @@ async function search() {
                     :indeterminate="pickedHere.length > 0 && !allPicked"
                     @change="pickAll(($event.target as HTMLInputElement).checked)"
                   />
-                  {{ plural(group.files.length, "file") }}
-                </label>
-                <span class="label">Current name</span>
+                  <SortHeading
+                    v-if="group.kind === 'tv'"
+                    v-tip="'Sort by episode'"
+                    :direction="direction('episode')"
+                    @click="sortBy('episode')"
+                  >
+                    {{ plural(group.files.length, "file") }}
+                  </SortHeading>
+                  <template v-else>{{ plural(group.files.length, "file") }}</template>
+                </span>
+                <span>
+                  <SortHeading :direction="direction('source')" @click="sortBy('source')">
+                    Current name
+                  </SortHeading>
+                </span>
                 <span class="row between">
-                  <span class="label">New name</span>
+                  <SortHeading :direction="direction('target')" @click="sortBy('target')">
+                    New name
+                  </SortHeading>
                   <span
                     v-if="problemFiles.length"
                     class="row problems"
@@ -785,7 +835,7 @@ async function search() {
                 </span>
               </FileRow>
               <FileRow
-                v-for="file in group.files"
+                v-for="file in files"
                 :key="file.id"
                 :problem="isProblem(file)"
                 :current="editing === file.id && isProblem(file)"
