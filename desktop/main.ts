@@ -363,15 +363,35 @@ async function start() {
     mainWindow.webContents.session.setPermissionRequestHandler(
       (_contents, _permission, callback) => callback(false),
     );
+    // Without a View menu nothing opens devtools, so unpackaged runs get the
+    // usual shortcut back.
+    if (!app.isPackaged) {
+      const { webContents } = mainWindow;
+      webContents.on("before-input-event", (event, input) => {
+        if (
+          input.type === "keyDown" &&
+          input.control &&
+          input.shift &&
+          input.key.toLowerCase() === "i"
+        ) {
+          event.preventDefault();
+          webContents.toggleDevTools();
+        }
+      });
+    }
     mainWindow.loadURL(uiUrl);
   }
+  // macOS keeps its menu: it sits in the system bar, not the window, and
+  // copy, paste and quit stop working without it.
   Menu.setApplicationMenu(
-    Menu.buildFromTemplate([
-      ...(process.platform === "darwin" ? [{ role: "appMenu" as const }] : []),
-      { role: "editMenu" },
-      { role: "viewMenu" },
-      { role: "windowMenu" },
-    ]),
+    process.platform === "darwin"
+      ? Menu.buildFromTemplate([
+          { role: "appMenu" },
+          { role: "editMenu" },
+          { role: "viewMenu" },
+          { role: "windowMenu" },
+        ])
+      : null,
   );
   createWindow();
   app.on("activate", () => {
