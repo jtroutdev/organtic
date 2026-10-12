@@ -161,6 +161,16 @@ export async function go(page: Page) {
   store.visits++;
 }
 
+/** Back to the wizard step that was on screen before History or Settings. */
+export const resume = () => go(store.wizard);
+/** That step, by the name the stepper gives it. */
+export const resumeLabel = () =>
+  store.wizard === "preview"
+    ? "Preview"
+    : store.queue.groups.length || store.queue.skipped.length
+      ? "Matching"
+      : "Add files";
+
 export async function saveSettings(change: Partial<AppSettings>) {
   // A plain copy: the desktop bridge cannot pass the reactive proxy around the nested templates.
   const settings: AppSettings = JSON.parse(

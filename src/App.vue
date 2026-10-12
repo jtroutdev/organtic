@@ -176,7 +176,7 @@ watch(
       <div class="brand">
         Organtic<small v-if="!api.desktop">Example mode</small>
       </div>
-      <WizardSteps :steps="steps" :at="at" @go="go" />
+      <WizardSteps :steps="steps" :at="at" :away="store.page !== store.wizard" @go="go" />
       <nav class="tabs" aria-label="Main">
         <NavTab
           v-for="(id, index) in tabs"
