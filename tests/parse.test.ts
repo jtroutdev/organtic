@@ -181,6 +181,10 @@ test("reads the air date of episodes named by day", () => {
     ["Blade.Runner.2049.2017.mkv", "Blade Runner 2049", null, "movie"],
     ["Movie.2016.13.05.mkv", "Movie", null, "movie"],
     ["2012.mkv", "2012", null, "movie"],
+    // A day the calendar does not have is not a date either, though 29 February is in a leap year.
+    ["Show.2024.02.29.mkv", "Show", "2024-02-29", "tv"],
+    ["Show.2023.02.29.mkv", "Show", null, "movie"],
+    ["Show.2024.04.31.mkv", "Show", null, "movie"],
   ];
   for (const [name, title, airDate, kind] of cases)
     assert.deepEqual(pick(parseFilename(name), "title", "airDate", "kind"), { title, airDate, kind }, name);

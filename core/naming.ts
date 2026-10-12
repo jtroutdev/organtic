@@ -47,13 +47,16 @@ const isPlaceholder = (name: string): name is Placeholder =>
 export function safeName(value: unknown): string {
   let name = String(value)
     .normalize("NFC")
+    // Direction overrides and isolates can make a name display as something it is not.
+    .replace(/[\u202a-\u202e\u2066-\u2069]/g, "")
     .replace(/[<>:"/\\|?*\x00-\x1f\x7f]/g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/[. ]+$/, "");
   if (!name || name === "." || name === "..")
     throw new Error("The filename is empty.");
-  if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(name))
+  // Windows device names, which it also reserves with the superscript digits ¹ ² ³.
+  if (/^(con|prn|aux|nul|(?:com|lpt)[1-9¹²³])(?:\.|$)/i.test(name))
     name = `_${name}`;
   // Leave room for extensions and sidecars on filesystems with a 255-byte limit.
   if (new TextEncoder().encode(name).length > 180)

@@ -24,6 +24,16 @@ const severance: MediaLike = {
 test("portable filenames", () => {
   assert.equal(safeName("A: B / C?"), "A B C");
   assert.equal(safeName("CON"), "_CON");
+  // Windows reserves the superscript forms as well, but not other digits or longer names.
+  assert.equal(safeName("COM¹"), "_COM¹");
+  assert.equal(safeName("lpt³.txt"), "_lpt³.txt");
+  assert.equal(safeName("COM⁴"), "COM⁴");
+  assert.equal(safeName("COM¹1"), "COM¹1");
+  // Direction overrides and isolates are dropped; the letters of a right-to-left title are kept.
+  assert.equal(safeName("\u202egnp.exe"), "gnp.exe");
+  assert.equal(safeName("A\u2066B\u2069 \u202d"), "AB");
+  assert.equal(safeName("שלום"), "שלום");
+  assert.throws(() => safeName("\u202e\u2066"), /empty/);
   assert.throws(() => safeName("..."));
   assert.throws(() => safeName("界".repeat(80)), /too long/);
 });

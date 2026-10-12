@@ -45,7 +45,7 @@ const WORDS = [
   "1080p", "2160p", "720p", "x264", "x265", "HEVC", "BluRay", "WEB-DL", "HDR", "10bit",
   "[SubsPlease]", "[1A2B3C4D]", "-GRP", "sample", "trailer", "extras", "REPACK", "PROPER",
   "Ünïcödé", "東京", "Ａ", "é", "‮", "🎬", "İ", "ß",
-  "CON", "nul", "com1", "..", "...", "~", "'", "&", "%20", "{title}", "$1",
+  "CON", "nul", "com1", "COM¹", "lpt²", "\u2066", "2024.02.30", "2023-02-29", "2024 04 31", "..", "...", "~", "'", "&", "%20", "{title}", "$1",
 ];
 const SEPARATORS = [".", " ", "_", "-", " - ", "", "  ", ".-.", "[", "]", "(", ")", "/", "\\"];
 const EXTENSIONS = [".mkv", ".mp4", ".avi", ".srt", ".en.srt", "", ".", ".MKV", ".tar.gz"];
@@ -85,8 +85,11 @@ function checkParsed(parsed: ParsedName, input: string) {
   assert.ok(isCount(parsed.year, 1), `year ${parsed.year} from ${where}`);
   if (parsed.episodeEnd !== null)
     assert.ok(parsed.episode !== null, `episodeEnd without episode from ${where}`);
-  if (parsed.airDate !== null)
+  if (parsed.airDate !== null) {
     assert.match(parsed.airDate, /^\d{4}-\d{2}-\d{2}$/, where);
+    // A real day: the calendar gives the same date back.
+    assert.equal(new Date(`${parsed.airDate}T00:00:00Z`).toISOString().slice(0, 10), parsed.airDate, where);
+  }
 }
 
 test("parsing never throws and keeps its numbers whole on generated names", () => {
@@ -119,13 +122,14 @@ test("parsing stays fast on long repetitive names", () => {
 });
 
 const UNSAFE = /[<>:"/\\|?*\x00-\x1f\x7f]/;
-const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
+const RESERVED = /^(con|prn|aux|nul|(?:com|lpt)[1-9¹²³])(?:\.|$)/i;
 const REFUSALS = /The filename is empty\.|The generated name is too long\./;
 
 function checkSafe(name: string, from: string) {
   const where = `${JSON.stringify(name)} from ${JSON.stringify(from)}`;
   assert.ok(name.length > 0, where);
   assert.doesNotMatch(name, UNSAFE, where);
+  assert.doesNotMatch(name, /[\u202a-\u202e\u2066-\u2069]/, where);
   assert.doesNotMatch(name, /[. ]$|^ /, where);
   assert.doesNotMatch(name, RESERVED, where);
   assert.notEqual(name, "..", where);
