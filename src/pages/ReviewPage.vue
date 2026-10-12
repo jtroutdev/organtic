@@ -595,11 +595,27 @@ async function search() {
                 <span class="pill" :class="STATUS[group.status][0]">{{
                   STATUS[group.status][1]
                 }}</span>
-                <p class="muted">{{ why }}</p>
               </div>
-              <div class="row actions">
+              <form
+                v-if="merging"
+                class="row numbers actions"
+                @submit.prevent="move(true)"
+                @keydown.esc="merging = false"
+              >
+                <label
+                  >Merge all {{ plural(group.files.length, "file") }} into
+                  <select v-focus v-model="mergeTo" class="input wide">
+                    <option v-for="item in others" :key="item.key" :value="item.key">
+                      {{ nameOf(item) }}
+                    </option>
+                  </select></label
+                >
+                <button class="btn primary" type="submit" :disabled="busy">Merge</button>
+                <button class="btn quiet" type="button" @click="merging = false">Cancel</button>
+              </form>
+              <div v-else class="row actions">
                 <button
-                  v-if="others.length && !merging"
+                  v-if="others.length"
                   class="btn quiet"
                   type="button"
                   aria-label="Merge group into another"
@@ -631,23 +647,7 @@ async function search() {
                 </button>
               </div>
             </div>
-            <form
-              v-if="merging"
-              class="row numbers"
-              @submit.prevent="move(true)"
-              @keydown.esc="merging = false"
-            >
-              <label
-                >Merge all {{ plural(group.files.length, "file") }} into
-                <select v-focus v-model="mergeTo" class="input wide">
-                  <option v-for="item in others" :key="item.key" :value="item.key">
-                    {{ nameOf(item) }}
-                  </option>
-                </select></label
-              >
-              <button class="btn primary" type="submit" :disabled="busy">Merge</button>
-              <button class="btn quiet" type="button" @click="merging = false">Cancel</button>
-            </form>
+            <p v-if="why" class="note" :class="STATUS[group.status][0]">{{ why }}</p>
             <div class="matching">
               <div class="row between">
                 <form class="row" novalidate @submit.prevent="search">
