@@ -310,6 +310,10 @@ export interface QueueGroup {
   numbering: Catalogue;
   /** Whether that choice applies to this group's current match. */
   numberingChoice: boolean;
+  /** Where this group's organised folders are created. */
+  destination: string;
+  /** A folder other than the one its files were added from was chosen for it. */
+  destinationChanged: boolean;
 }
 
 export type Catalogue = "tmdb" | "tvdb";
@@ -327,9 +331,6 @@ export interface OrderingChoice {
 export interface QueueState {
   groups: QueueGroup[];
   skipped: { id: string; source: string; reason: SkipReason }[];
-  /** Where organised folders are created; empty when the queue is empty. */
-  destination: string;
-  destinationChanged: boolean;
   /** Progress of the lookups started by adding files; null when none are running. */
   lookups: { done: number; total: number } | null;
 }
@@ -337,7 +338,7 @@ export interface QueueState {
 export interface PreviewItem {
   fileId: string;
   kind: "video" | "subtitle" | "metadata" | "artwork";
-  /** New path relative to the destination. */
+  /** New path relative to its group's destination. */
   to: string;
   from: string | null;
   problem: string | null;
@@ -354,13 +355,14 @@ export interface PreviewGroup {
   /** Files of this group that will not be touched. */
   left: string[];
   problems: string[];
+  /** The folder the group's new paths are inside. */
+  destination: string;
 }
 
 export interface PreviewState {
   id: string;
-  destination: string;
   groups: PreviewGroup[];
-  /** Folders that will be created, relative to the destination. */
+  /** Folders that will be created, relative to the destination of the group they are for. */
   newFolders: string[];
   /** Source folders the batch empties and will remove. */
   removedFolders: string[];

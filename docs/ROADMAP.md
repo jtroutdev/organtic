@@ -54,6 +54,7 @@
 - Embedded video tags using separately managed MKV/MP4 tools, with backups and stream-preservation checks
 - CLI powered by the same matching/planning core
 - Music and subtitle-fetching providers if these become priorities
+- Moving files to a destination on another drive, share or mount, if users ask for it. Today such a folder is refused when it is chosen, because files move by hard link or rename, which cannot cross filesystems (`noReplaceMove` in `core/files.ts`). It needs a copy-then-delete path with: progress, cancellation and a free-space check; a size or content check before the original is removed; journal and recovery support for a copy cut short; and undo that copies back
 - Automation/watch folders only after reliable unattended conflict and recovery behavior exists
 
 ## Open product choices

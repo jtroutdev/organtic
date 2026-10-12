@@ -79,7 +79,7 @@ test("groups a folder, suggests confident matches and flags the rest", async (t)
   ]);
   assert.ok(states.some((state) => state.groups.some((g) => g.status === "matching")));
   const state = session.state();
-  assert.equal(state.destination, dir);
+  assert.ok(state.groups.every((g) => g.destination === dir && !g.destinationChanged));
   assert.deepEqual(state.skipped.map((file) => file.source), ["Arrival.2016-sample.mkv"]);
 
   const severance = group("Severance");
@@ -182,7 +182,7 @@ test("choosing, searching again and changing settings update the queue", async (
   session.remove(group("Solaris").key);
   assert.equal(session.state().groups.length, 1);
   session.clear();
-  assert.deepEqual(session.state(), { groups: [], skipped: [], destination: "", destinationChanged: false, lookups: null });
+  assert.deepEqual(session.state(), { groups: [], skipped: [], lookups: null });
 });
 
 test("films need a TMDB token, extras can be included, and the destination can change", async (t) => {
@@ -194,9 +194,10 @@ test("films need a TMDB token, extras can be included, and the destination can c
   session.confirmSuggested();
   session.exclude(group("Arrival").files[1]!.id, true);
   await fs.mkdir(path.join(dir, "library"));
-  session.setDestination(path.join(dir, "library"));
+  session.setDestination(group("Arrival").key, path.join(dir, "library"));
+  assert.equal(group("Arrival").destinationChanged, true);
   const preview = await session.preview();
-  assert.equal(preview.destination, path.join(dir, "library"));
+  assert.equal(preview.groups[0]!.destination, path.join(dir, "library"));
   // "in" still holds the excluded sample, so it stays.
   assert.deepEqual(preview.removedFolders, []);
   await session.apply(preview.id);
@@ -225,11 +226,11 @@ test("an imported show folder is renamed, and files left in the queue follow it"
     planner: { createPlan, applyPlan: (plan) => applyPlan(plan, path.join(dir, ".journals")) },
   });
   await session.addFiles(await scanPaths([path.join(dir, "Severance")]));
-  assert.equal(session.state().destination, path.join(dir, "Severance"));
+  assert.equal(session.state().groups[0]!.destination, path.join(dir, "Severance"));
   session.confirmSuggested();
   const preview = await session.preview();
   // The folder is shown under its new name, beside its old one, not inside it.
-  assert.equal(preview.destination, dir);
+  assert.equal(preview.groups[0]!.destination, dir);
   assert.deepEqual(preview.renamedFolders, [{ from: "Severance", to: "Severance (2022)" }]);
   assert.deepEqual(preview.newFolders, ["Severance (2022)/Season 01"]);
   assert.deepEqual(
@@ -241,12 +242,43 @@ test("an imported show folder is renamed, and files left in the queue follow it"
   await fs.access(path.join(dir, "Severance (2022)/Season 01/Severance (2022) - S01E01 - Part 1.mkv"));
   // The episode that was not matched is still queued, under the folder's new name.
   const state = session.state();
-  assert.equal(state.destination, path.join(dir, "Severance (2022)"));
+  const { destination } = state.groups[0]!;
+  assert.equal(destination, path.join(dir, "Severance (2022)"));
   assert.deepEqual(state.groups[0]!.files.map((file) => file.source), ["Severance.S01E09.1080p.mkv"]);
-  await fs.access(path.join(state.destination, "Severance.S01E09.1080p.mkv"));
+  await fs.access(path.join(destination, "Severance.S01E09.1080p.mkv"));
   // Undoing the batch elsewhere gives the folder its old name back, and the queue follows.
   session.relocate([{ from: path.join(dir, "Severance (2022)"), to: path.join(dir, "Severance") }]);
-  assert.equal(session.state().destination, path.join(dir, "Severance"));
+  assert.equal(session.state().groups[0]!.destination, path.join(dir, "Severance"));
+});
+
+test("a film found among a show's episodes can be sent to another folder on its own", async (t) => {
+  const { session, group, dir } = await setup(t, [
+    "tv/Severance/Severance.S01E01.1080p.mkv",
+    "tv/Severance/Arrival.2016.1080p.mkv",
+    "tv/Severance/Arrival.2016.1080p.en.srt",
+    "movies/keep.txt",
+  ]);
+  session.clear();
+  await session.addFiles(await scanPaths([path.join(dir, "tv/Severance")]));
+  session.confirmSuggested();
+  session.setDestination(group("Arrival").key, path.join(dir, "movies"));
+  assert.equal(group("Arrival").destination, path.join(dir, "movies"));
+  assert.equal(group("Severance").destination, path.join(dir, "tv/Severance"));
+  assert.equal(group("Severance").destinationChanged, false);
+
+  const preview = await session.preview();
+  const shown = (kind: string) => preview.groups.find((g) => g.kind === kind)!;
+  assert.equal(shown("movie").destination, path.join(dir, "movies"));
+  // The show's folder keeps its place and takes the show's name; only the film leaves it.
+  assert.equal(shown("tv").destination, path.join(dir, "tv"));
+  assert.deepEqual(preview.renamedFolders, [{ from: "Severance", to: "Severance (2022)" }]);
+  assert.deepEqual(preview.newFolders.sort(), ["Arrival (2016)", "Severance (2022)/Season 01"]);
+  await session.apply(preview.id);
+  await fs.access(path.join(dir, "movies/Arrival (2016)/Arrival (2016).mkv"));
+  await fs.access(path.join(dir, "movies/Arrival (2016)/Arrival (2016).en.srt"));
+  await fs.access(
+    path.join(dir, "tv/Severance (2022)/Season 01/Severance (2022) - S01E01 - Part 1.mkv"),
+  );
 });
 
 test("settings reject unusable templates and ignore junk", () => {

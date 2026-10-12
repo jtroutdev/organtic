@@ -196,6 +196,19 @@ function isTitleFolder(name: string, media: MediaLike, rendered: string) {
   );
 }
 
+/**
+ * Whether files can be moved into a folder, which needs them on the same drive: one that has
+ * since gone missing is left for the preview to report.
+ */
+export async function onSameDrive(folder: string, files: string[]) {
+  const { dev } = await fs.stat(folder);
+  for (const file of files) {
+    const stat = await exists(file);
+    if (stat && stat.dev !== dev) return false;
+  }
+  return true;
+}
+
 async function moveOperation(
   source: string,
   target: string,

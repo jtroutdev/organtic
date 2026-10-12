@@ -64,6 +64,8 @@ interface Group {
   lookup: number;
   /** The status to return to if a queued lookup is cancelled. */
   before?: QueueGroup["status"];
+  /** Where this group's folders are created, when not where its files were added from. */
+  destination?: string;
 }
 
 /** One batch of queued lookups; cancelling replaces it so late finishers are not counted. */
@@ -106,7 +108,6 @@ export class Session {
   private files = new Map<string, MediaFile>();
   private excluded = new Set<string>();
   private groups = new Map<string, Group>();
-  private destination: string | null = null;
   private plan: { plan: Plan; fileIds: string[] } | null = null;
   private manualGroups = 0;
   private run = newRun();
@@ -133,7 +134,6 @@ export class Session {
 
   state(): QueueState {
     const all = [...this.files.values()];
-    const roots = [...new Set(all.map((file) => file.root))];
     return {
       groups: [...this.groups.values()].map((group) => this.describe(group)),
       skipped: all
@@ -143,22 +143,19 @@ export class Session {
           source: relativeTo(file.path, file.root),
           reason: file.parsed.skip!,
         })),
-      destination:
-        this.destination ??
-        (roots.length === 1
-          ? roots[0]!
-          : roots.length
-            ? "The folder each file was added from"
-            : ""),
-      destinationChanged: this.destination !== null,
       lookups: this.run.total
         ? { done: this.run.done, total: this.run.total }
         : null,
     };
   }
 
-  private rootOf(file: MediaFile) {
-    return this.destination ?? file.root;
+  /** Where a group's folders are created, as shown to the user. */
+  private destinationOf(group: Group) {
+    const roots = new Set(group.fileIds.map((id) => this.files.get(id)!.root));
+    return (
+      group.destination ??
+      (roots.size === 1 ? [...roots][0]! : "The folder each file was added from")
+    );
   }
 
   private mediaOf(group: Group, fileId: string) {
@@ -244,6 +241,8 @@ export class Session {
       files: group.fileIds.map((id) =>
         this.describeFile(group, this.files.get(id)!),
       ),
+      destination: this.destinationOf(group),
+      destinationChanged: group.destination !== undefined,
     };
   }
 
@@ -381,7 +380,6 @@ export class Session {
       this.excluded.delete(id);
     }
     this.groups.delete(key);
-    if (!this.files.size) this.destination = null;
     this.changed();
   }
 
@@ -389,7 +387,6 @@ export class Session {
     this.files.clear();
     this.groups.clear();
     this.excluded.clear();
-    this.destination = null;
     this.changed();
   }
 
@@ -508,8 +505,11 @@ export class Session {
     else await this.resolve(group);
   }
 
-  setDestination(folder: string | null) {
-    this.destination = folder;
+  /** Has one group's folders created in another folder; null goes back to where its files were added from. */
+  setDestination(key: string, folder: string | null) {
+    const group = this.group(key);
+    if (folder === null) delete group.destination;
+    else group.destination = folder;
     this.changed();
   }
 
@@ -840,7 +840,7 @@ export class Session {
           selections.push({
             group,
             media,
-            file: { ...file, root: this.rootOf(file) },
+            file: { ...file, root: group.destination ?? file.root },
             sourceRoot: file.root,
           });
       }
@@ -880,6 +880,9 @@ export class Session {
         .split(separatorOf(target))
         .join("/");
     };
+    // A renamed folder is listed inside its parent, under its new name.
+    const shownRoot = (root: string) =>
+      renames.some((op) => op.source === root) ? parentOf(root) : root;
     const attached = new Set<object>();
     const problemFor = (match: (issue: Plan["issues"][number]) => boolean) => {
       const found = plan.issues.filter(match);
@@ -899,6 +902,7 @@ export class Session {
           items: [],
           left: [],
           problems: [],
+          destination: shownRoot(this.destinationOf(group)),
         };
         groups.set(group.key, entry);
       }
@@ -940,10 +944,10 @@ export class Session {
     const count = (kind: PreviewItem["kind"]) =>
       items.filter((item) => item.kind === kind).length;
     const folders = plan.operations.filter((op) => op.type === "mkdir");
-    const queued = this.state().destination;
-    const destination = renames.some((op) => op.source === queued)
-      ? parentOf(queued)
-      : queued;
+    // The folder each new folder is listed inside: the innermost one that files are organised into.
+    const organised = [...new Set(selections.map(({ file }) => file.root))].sort(
+      (a, b) => b.length - a.length,
+    );
     const roots = [...new Set(selections.map((item) => item.sourceRoot!))];
     const removed = plan.operations
       .filter((op) => op.type === "rmdir")
@@ -953,12 +957,11 @@ export class Session {
       });
     return {
       id: plan.id,
-      destination,
       groups: list,
       newFolders: folders.map((op) =>
         shown(
           op.target,
-          renames.find((item) => op.target.startsWith(item.source))?.source ?? queued,
+          organised.find((root) => op.target.startsWith(root)) ?? "",
         ),
       ),
       removedFolders: removed,
@@ -1024,7 +1027,6 @@ export class Session {
             "The rest of this group was renamed. These files were left where they are.";
         }
       }
-      if (!this.files.size) this.destination = null;
       this.relocate(renamed);
     }
   }
@@ -1039,7 +1041,8 @@ export class Session {
     };
     for (const [id, file] of this.files)
       this.files.set(id, { ...file, path: moved(file.path), root: moved(file.root) });
-    if (this.destination !== null) this.destination = moved(this.destination);
+    for (const group of this.groups.values())
+      if (group.destination !== undefined) group.destination = moved(group.destination);
     this.changed();
   }
 }

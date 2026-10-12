@@ -33,8 +33,6 @@ export const store = reactive({
   queue: {
     groups: [],
     skipped: [],
-    destination: "",
-    destinationChanged: false,
     lookups: null,
   } as QueueState,
   settings: DEFAULT_SETTINGS as AppSettings,
@@ -47,7 +45,8 @@ export const store = reactive({
   previewSelected: null as string | null,
   applied: null as {
     completed: number;
-    destination: string;
+    /** The folders the batch organised into, one unless groups were sent to different ones. */
+    destinations: string[];
     warnings: string[];
   } | null,
   batches: [] as BatchSummary[],
@@ -199,9 +198,10 @@ export async function apply() {
   if (!result) return void loadPreview();
   if (result.canceled) return;
   announce(`${result.completed ?? 0} changes applied.`);
+  const destinations = [...new Set(preview.groups.map((group) => group.destination))];
   store.applied = {
     completed: result.completed ?? 0,
-    destination: preview.destination,
+    destinations,
     warnings: result.warnings ?? [],
   };
   store.preview = null;
