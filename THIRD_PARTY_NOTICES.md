@@ -11,7 +11,6 @@ Original application code is covered by [LICENSE](LICENSE). Third-party librarie
 - [Anime mapping lists](#anime-mapping-lists)
 - [Fonts](#fonts)
 - [Dependencies](#dependencies)
-- [Prior art](#prior-art)
 
 ## TMDB
 
