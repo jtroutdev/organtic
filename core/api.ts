@@ -9,7 +9,7 @@ import type {
   SourcesState,
 } from "./types.ts";
 
-export type ReferenceKey = "tmdb" | "token" | "tvmaze" | "license" | "tvdb";
+export type ReferenceKey = "tmdb" | "token" | "tvmaze" | "license" | "tvdb" | "tvdbHome" | "kitsu";
 
 /**
  * Everything the interface can ask of the app. The desktop build implements it over IPC;

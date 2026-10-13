@@ -48,7 +48,8 @@
       "build/**/*",
       "desktop/preload.cjs",
       "package.json",
-      "LICENSE"
+      "LICENSE",
+      "THIRD_PARTY_NOTICES.md"
     ],
     "directories": {
       "output": "release"

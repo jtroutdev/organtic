@@ -302,7 +302,9 @@ const sections = computed<[string, string, string, string][]>(() => [
             An anime catalogue with romaji, English and Japanese titles. Needs
             no account. It is searched only for groups set to Anime on Matching,
             where its results are offered beside the others. Each season or
-            part is usually its own entry there.
+            part is usually its own entry there. Data from
+            <WebLink @click="api.openReference('kitsu')">Kitsu</WebLink>, which
+            does not endorse this app.
           </p>
         </div>
         <CheckOption
@@ -364,8 +366,9 @@ const sections = computed<[string, string, string, string][]>(() => [
             NOTES[store.sources.tvdb]
           }}</StatusPill>
           <span class="muted"
-            >Metadata provided by TheTVDB. Please consider adding missing
-            information or subscribing.</span
+            >Metadata provided by
+            <WebLink @click="api.openReference('tvdbHome')">TheTVDB</WebLink>.
+            Please consider adding missing information or subscribing.</span
           >
         </div>
         <CheckOption
