@@ -69,7 +69,3 @@ Red Hat Text, Red Hat Mono, and Readex Pro are bundled through the `@fontsource`
 Electron, Vue, Vite, and packaging dependencies include their own license files. The lockfile pins the dependency tree. Release packaging must retain required notices for the runtime and bundled dependencies.
 
 As checked in the Linux package on 12 October 2026: it carries `LICENSE.electron.txt` and `LICENSES.chromium.html` beside the app, and inside the app the licence file of every runtime package (Vue and its parts, MIT; the three font packages, OFL 1.1), this project's `LICENSE`, and this file. The Windows and macOS packages are built from the same configuration but were not opened.
-
-## Prior art
-
-FileBot and tinyMediaManager inspired the requested problem space. No code or assets from either project were incorporated. No affiliation or endorsement is claimed.
