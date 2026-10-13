@@ -107,6 +107,6 @@ Every search sends the entered title and filters to all the sources for that gro
 - Each group is organised inside the folder its files were added from unless another is chosen for it in Preview, which is how a film found among a show's episodes is sent to the films folder while the episodes stay put. The choice belongs to that group alone and must be on the same drive as the group's files: a folder on a different drive, network share or mount is refused when it is chosen.
 - Import is limited to 20,000 entries. Lookups run three groups at a time; Matching shows how many are done and can cancel the rest. Cancelled groups keep any match they already had and can be searched by hand.
 
-See [architecture](docs/ARCHITECTURE.md), [roadmap](docs/ROADMAP.md), [validation](docs/VALIDATION.md), and [third-party notices](THIRD_PARTY_NOTICES.md).
+See [architecture](docs/ARCHITECTURE.md), [validation](docs/VALIDATION.md), and [third-party notices](THIRD_PARTY_NOTICES.md).
 
 To report a bug or contribute, read [CONTRIBUTING.md](CONTRIBUTING.md). Security problems are reported privately; see [SECURITY.md](SECURITY.md).

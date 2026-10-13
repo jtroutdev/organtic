@@ -9,7 +9,7 @@ Thanks for looking. Organtic is an early project with one maintainer, so the aim
 - **Anything larger** (a new feature, a new metadata source, a change to how files are moved or recorded, a redesign) starts as an issue. Agree the approach there first. A large pull request that arrives unannounced may be closed even if the code is good.
 - **A security problem** is reported privately. See [SECURITY.md](SECURITY.md).
 
-The [roadmap](docs/ROADMAP.md) says what is planned, and [validation](docs/VALIDATION.md) says what has and has not been tested.
+[Validation](docs/VALIDATION.md) says what has and has not been tested. For what is planned, ask in an issue.
 
 ## Setting up
 
@@ -40,7 +40,7 @@ CI runs the same checks, and an unpacked package build, on Linux, Windows and ma
 - **Keyboard and screen reader support stay intact.** A new control is reachable by keyboard and has a name.
 - **No credentials.** No API token or key is bundled or committed, including in tests and fixtures.
 - **New dependencies need a reason.** Say what it is for and why the standard library or what is already here will not do. `npm audit` stays clean.
-- **Docs move with the code.** Update the README when behaviour changes, and the roadmap and validation notes when an item is finished or newly untested.
+- **Docs move with the code.** Update the README when behaviour changes, and the validation notes when something is newly tested or newly untested.
 
 ## Branches, commits and pull requests
 
