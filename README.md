@@ -93,3 +93,5 @@ Every search sends the entered title and filters to all the sources for that gro
 - Import is limited to 20,000 entries. Lookups run three groups at a time; Matching shows how many are done and can cancel the rest. Cancelled groups keep any match they already had and can be searched by hand.
 
 See [architecture](docs/ARCHITECTURE.md), [roadmap](docs/ROADMAP.md), [validation](docs/VALIDATION.md), and [third-party notices](THIRD_PARTY_NOTICES.md).
+
+To report a bug or contribute, read [CONTRIBUTING.md](CONTRIBUTING.md). Security problems are reported privately; see [SECURITY.md](SECURITY.md).
