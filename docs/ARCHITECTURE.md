@@ -1,5 +1,14 @@
 # Architecture
 
+## Contents
+
+- [Product boundary](#product-boundary)
+- [Components](#components)
+- [Data flow](#data-flow)
+- [Journal model](#journal-model)
+- [Provider contract](#provider-contract)
+- [Metadata direction](#metadata-direction)
+
 ## Product boundary
 
 Desktop first, movies and TV, explicit match review, then safe preview and apply. Local files remain authoritative. Metadata providers supply candidates; they never initiate writes. This initial implementation is independent of FileBot and tinyMediaManager.

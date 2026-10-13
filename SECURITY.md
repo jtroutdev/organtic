@@ -2,6 +2,13 @@
 
 Organtic renames and moves files on your own computer, so a mistake here can cost someone their library. Reports are taken seriously.
 
+## Contents
+
+- [Reporting a problem](#reporting-a-problem)
+- [What counts](#what-counts)
+- [What does not](#what-does-not)
+- [Supported versions](#supported-versions)
+
 ## Reporting a problem
 
 Report it privately through GitHub: open the repository's **Security** tab and choose **Report a vulnerability**, or go straight to [the report form](https://github.com/jtroutdev/organtic/security/advisories/new). Only the maintainer can see the report.

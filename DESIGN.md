@@ -1,4 +1,22 @@
 ---
+# Read this file before changing anything in src/ or index.html. Agent entry point: AGENTS.md.
+#
+# Contents
+#   Front matter (this block): the token values, in this order
+#     colors       dark values first, then the same names with a -light suffix
+#     typography   eleven levels, headline-lg to code-sm
+#     rounded      none, sm, md, full
+#     spacing      the base-4 scale, the four density steps, control heights
+#     components   resting values for each component and its states
+#   Prose (after the closing ---): the rules, one "## " heading each
+#     Overview            what the app is, hue 290, dark first, how tokens are named
+#     Colors              what each colour is for, oklch only, contrast targets
+#     Typography          three families and what each level is used for
+#     Layout              spacing by density, gap over padding, grid not flex, the split, control height, footers
+#     Elevation & Depth   flat surfaces, the one shadow, named layers
+#     Shapes              radii, edges, the focus ring
+#     Components          scoped styles, shared states, then each component by name
+#     Do's and Don'ts     the short list to check a change against
 version: alpha
 name: Organtic
 description: A desktop tool that renames and files media. Dense, flat, keyboard friendly, dark first.
@@ -345,6 +363,8 @@ Space follows density: the deeper something is nested, the closer it sits to its
 - `nested` 8px is anything further in: the controls of a row, the parts of a section, a field and its example.
 - `dense` 4px is the exception: a tight cluster of buttons or tabs, a label and the thing it names, the two lines of a list item.
 
+The page step stays 24px even though it costs height; rows are where height is saved, not the space around the blocks of a page.
+
 The gap between things and the padding of a container use one of these four. The plain scale (12px in a button or input, 2px in a pill) is for the inside of a control. Space comes from `gap` first, then `padding`. Margin is not used for spacing; the stylesheet clears the browser's own margins once and sets none. Something that runs edge to edge inside a padded pane spans the pane's full-width grid column and pads itself, in place of a negative margin.
 
 Page structure and scroll regions are built with CSS grid and `overflow`, as are the header, page heading, footer, banner and field. Flex is for content flow inside a component: a wrapping row of buttons, a run of pills. The region that fills takes `minmax(0, 1fr)`; the list inside it scrolls.
@@ -365,7 +385,7 @@ Three radii. `sm` 4px for small things: tick boxes, tags, key caps, posters, opt
 
 ## Components
 
-Each component is a Vue file in `src/components` and carries its own rules in a scoped style block; a page does the same for what only it lays out. `src/style.css` holds what the whole app shares: tokens, the reset, element defaults and the classes any page may use. Nothing is styled inline. A value that comes from data reaches CSS as a class, an attribute or a native element's own value; the one exception is a position worked out in script, such as the tooltip's.
+Each component is a Vue file in `src/components` and carries its own rules in a scoped style block; a page does the same for what only it lays out. `src/style.css` holds what the whole app shares: tokens, the reset, element defaults and the classes any page may use. Nothing is styled inline: no `style` attribute, no `:style` binding, and no `v-bind()` in a style block, which compiles to an inline style. A value that comes from data reaches CSS as a class, an attribute or a native element's own value; the one exception is a position worked out in script, such as the tooltip's.
 
 All interactive components answer the same states.
 
@@ -415,6 +435,9 @@ Two selection idioms, never mixed: the **accent tint with a 1px accent edge** ma
 - Do pair every status colour with words.
 - Do show before and after side by side.
 - Do put secondary information behind a Details button.
+- Do build page structure and scroll regions with grid.
+- Do space with `gap`, then `padding`, using a spacing variable.
+- Do keep a component's rules in its own scoped style block.
 - Don't design a screen in light first. Light is checked after dark is settled.
 - Don't mark the selected item with a stripe on its left edge.
 - Don't style an action as a link. Links are only for things that open a web page.
@@ -422,6 +445,10 @@ Two selection idioms, never mixed: the **accent tint with a 1px accent edge** ma
 - Don't use the `title` attribute for a tooltip.
 - Don't put a dot or an icon inside a pill.
 - Don't dim, shift or flash the screen while something loads.
+- Don't let the window scroll, and don't cap the width of content.
+- Don't lay out a page or a scroll region with flex. Flex is for content flow inside a component.
+- Don't space with margin.
+- Don't style inline, unless script has to set a position.
 - Don't use outline subtle as the only edge of something a person acts on.
 - Don't write a colour in hex, rgb, hsl or by name. Use oklch.
 - Don't write a raw colour, size or duration in a component rule. Add a token or use one.

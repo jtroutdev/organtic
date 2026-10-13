@@ -2,12 +2,22 @@
 
 Thanks for looking. Organtic is an early project with one maintainer, so the aim of this page is to keep everyone's time well spent.
 
+## Contents
+
+- [Before you write code](#before-you-write-code)
+- [Setting up](#setting-up)
+- [What a change needs](#what-a-change-needs)
+- [Branches, commits and pull requests](#branches-commits-and-pull-requests)
+- [Licence](#licence)
+- [Conduct](#conduct)
+
 ## Before you write code
 
 - **Found a bug?** [Open an issue](https://github.com/jtroutdev/organtic/issues/new) with the file names involved (made-up ones are fine), what you expected and what happened. A file name the app reads wrongly is a useful report all by itself.
 - **A small fix** (a typo, a wrongly parsed name, a clear bug with a test) can go straight to a pull request.
 - **Anything larger** (a new feature, a new metadata source, a change to how files are moved or recorded, a redesign) starts as an issue. Agree the approach there first. A large pull request that arrives unannounced may be closed even if the code is good.
 - **A security problem** is reported privately. See [SECURITY.md](SECURITY.md).
+- **Working with a coding agent?** It starts from [AGENTS.md](AGENTS.md), which maps every documentation file here and says which to read for which kind of change.
 
 [Validation](docs/VALIDATION.md) says what has and has not been tested. For what is planned, ask in an issue.
 
@@ -36,15 +46,15 @@ CI runs the same checks, and an unpacked package build, on Linux, Windows and ma
 - **Tests for anything in `core/`.** They run on temporary files and never on personal media. A parsing fix comes with the file name that was read wrongly. A change to applying, undoing or the history record comes with a test that stops it part-way; `tests/recovery.test.ts` shows how.
 - **No file is ever replaced, and nothing moves that the preview did not show.** A change that weakens either will not be merged.
 - **The interface does not touch the filesystem.** It sends group keys, file IDs and choices; `core/` and `desktop/` do the rest. See [architecture](docs/ARCHITECTURE.md).
-- **Interface changes follow [DESIGN.md](DESIGN.md)**: dark theme first, the existing colour, spacing and type variables, grid for layout. Say in the pull request which screens you looked at and in which theme.
+- **Interface changes follow [DESIGN.md](DESIGN.md)**, read before any edit to `src/` or `index.html`: dark theme first, the existing colour, spacing and type variables, grid for layout. Say in the pull request which screens you looked at and in which theme.
 - **Keyboard and screen reader support stay intact.** A new control is reachable by keyboard and has a name.
 - **No credentials.** No API token or key is bundled or committed, including in tests and fixtures.
 - **New dependencies need a reason.** Say what it is for and why the standard library or what is already here will not do. `npm audit` stays clean.
-- **Docs move with the code.** Update the README when behaviour changes, and the validation notes when something is newly tested or newly untested.
+- **Docs move with the code.** Update the README when behaviour changes, and the validation notes when something is newly tested or newly untested. A new documentation file is listed in [AGENTS.md](AGENTS.md) and opens with a contents list; a changed heading changes its file's contents list too.
 
 ## Branches, commits and pull requests
 
-- Branch from `main`, named by the kind of work: `fix/…`, `feature/…`, `bug/…`.
+- Branch from `main`, named by the kind of work: `fix/…`, `feature/…`, `bug/…`, `docs/…`.
 - One subject per pull request. Two unrelated fixes are two pull requests.
 - Write the commit subject as a plain sentence saying what the change does ("Refuse impossible air dates"), and use the body for why.
 - In the pull request, say what you checked and what you did not.
