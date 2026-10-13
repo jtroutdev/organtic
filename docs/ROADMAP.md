@@ -45,14 +45,19 @@
 
 ## Before a public stable release
 
-- Execute Windows/macOS/Linux CI and native integration tests on representative local, network, and removable filesystems
+- Run native integration tests on representative local, network, and removable filesystems (CI already runs the type check, tests and a package build on Windows, macOS and Linux for every push)
+- Run a batch against a disk that is really full, read-only or unplugged part-way; the check before a batch has only been tested with stand-ins
+- Open the Windows and macOS installers the release workflow builds, and see the app and its icon on those platforms; neither has been run
 - Validate Kodi/Plex/Jellyfin names and metadata against real libraries
 - Validate native file dialogs, screen readers, focus order, keyboard-only flow, high-DPI rendering, and large libraries
-- Final application icon (a provisional one, redrawn by `scripts/icons.sh` from `public/icon.svg`, is in place), chosen product name, signing/notarization, update strategy
+- Final application icon, with a version drawn for 16 pixels (a provisional one, redrawn by `scripts/icons.sh` from `public/icon.svg`, is in place), signing/notarization, update strategy
+- Decide whether to build for Intel Macs; the release workflow makes an Apple silicon `.dmg` only
+- Set `desktopName` so Linux desktops tie the window to its launcher; electron-builder warns that it is missing
 - Ask TheTVDB and Kitsu whether the way the app uses their APIs is permitted, and decide the distribution model against TMDB's non-commercial terms (the 12 October 2026 review is in THIRD_PARTY_NOTICES.md)
 
 ## Later
 
+- Strict type-checking of Vue templates; it is off because it rejects the attributes components pass through to their root element (`@click`, `aria-label`, `role`)
 - Embedded video tags using separately managed MKV/MP4 tools, with backups and stream-preservation checks
 - CLI powered by the same matching/planning core
 - Music and subtitle-fetching providers if these become priorities
