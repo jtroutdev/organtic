@@ -25,7 +25,7 @@ Organtic is an independent desktop application built with Electron and Vue on a 
 | Before | After |
 | --- | --- |
 | `Arrival.2016.1080p.BluRay.x264.mkv` | `Arrival (2016)/Arrival (2016).mkv` |
-| `Severance.S01E01.2160p.WEB-DL.mkv` | `Severance (2022)/Season 01/Severance (2022) - S01E01 - Good News About Hell.mkv` |
+| `Severance.S01E01.2160p.WEB.mkv` | `Severance (2022)/Season 01/Severance (2022) - S01E01 - Good News About Hell.mkv` |
 
 ## Contents
 
