@@ -2,6 +2,15 @@
 
 An independent, local-first desktop application for matching and renaming movie and TV files. Built with Electron and Vue, with a reusable JavaScript core. Original code is MIT licensed. This is an early development version, not a FileBot fork.
 
+## Contents
+
+- [Run it](#run-it)
+  - [Releases and checksums](#releases-and-checksums)
+- [First workflow](#first-workflow)
+  - [Keyboard](#keyboard)
+- [Metadata and sources](#metadata-and-sources)
+- [File safety and current limits](#file-safety-and-current-limits)
+
 ## Run it
 
 Install Node.js 24 or later, then run these commands in this folder (works in Fish, Bash, and PowerShell):

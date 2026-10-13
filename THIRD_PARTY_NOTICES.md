@@ -2,6 +2,17 @@
 
 Original application code is covered by [LICENSE](LICENSE). Third-party libraries, provider data, images, and trademarks retain their own terms.
 
+## Contents
+
+- [TMDB](#tmdb)
+- [TVmaze](#tvmaze)
+- [TheTVDB](#thetvdb)
+- [Kitsu](#kitsu)
+- [Anime mapping lists](#anime-mapping-lists)
+- [Fonts](#fonts)
+- [Dependencies](#dependencies)
+- [Prior art](#prior-art)
+
 ## TMDB
 
 This product uses the TMDB API but is not endorsed or certified by TMDB.
