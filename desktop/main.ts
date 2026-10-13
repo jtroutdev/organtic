@@ -363,6 +363,8 @@ async function start() {
 
   function createWindow() {
     mainWindow = new BrowserWindow({
+      // Linux takes the window's icon from here; Windows and macOS use the packaged one.
+      icon: path.join(root, "dist/icon.png"),
       width: 1280,
       height: 900,
       minWidth: 840,
