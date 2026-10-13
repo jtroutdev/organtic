@@ -23,6 +23,21 @@ npm run dist      # Installer for the current platform
 
 Build Windows, macOS, and Linux installers on their respective operating systems. Packaging configuration and a three-platform CI workflow are provided; only Linux has been built locally. Signing/notarization credentials and public releases are not configured.
 
+### Releases and checksums
+
+Pushing a tag that matches the version in `package.json` (`v0.2.0` for `0.2.0`) runs the release workflow. It builds the installer on each platform and drafts a GitHub release holding them and `SHA256SUMS.txt`; the draft is published by hand. Installers are not signed.
+
+To check a download, put `SHA256SUMS.txt` beside it and run one of these. Each should report `OK` for the file you have.
+
+```sh
+sha256sum --check --ignore-missing SHA256SUMS.txt   # Linux
+shasum -a 256 --check --ignore-missing SHA256SUMS.txt   # macOS
+```
+
+On Windows, compare the line for your file with the output of `Get-FileHash .\Organtic-0.2.0-win-x64.exe -Algorithm SHA256` in PowerShell.
+
+A matching checksum shows the file arrived as it was built. It does not show who built it; only signing can.
+
 ## First workflow
 
 1. Add files or a folder with the buttons, or drop them on the window. Folders are read recursively; hidden entries and symbolic links are skipped. Samples, trailers, and extras are set aside and can be included by hand.

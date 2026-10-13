@@ -29,6 +29,7 @@
 - [x] Packaging-tool advisories cleared; the full dependency audit is clean
 - [x] Failures made plain: what an import could not read, what became of each change in a batch that stopped and why, and a check for a read-only or full disk before anything moves
 - [x] Contribution and security policies, with private vulnerability reporting switched on
+- [x] A release workflow that builds the installers and drafts a release with their SHA-256 checksums
 - [x] Optional poster, backdrop and season poster downloads
 - [x] Moving existing NFO files and artwork with their video, folder or show
 - [x] DVD and other alternate episode orderings
@@ -47,7 +48,7 @@
 - Execute Windows/macOS/Linux CI and native integration tests on representative local, network, and removable filesystems
 - Validate Kodi/Plex/Jellyfin names and metadata against real libraries
 - Validate native file dialogs, screen readers, focus order, keyboard-only flow, high-DPI rendering, and large libraries
-- Final application icon (a provisional one, redrawn by `scripts/icons.sh` from `public/icon.svg`, is in place), chosen product name, signing/notarization, release checksums, update strategy
+- Final application icon (a provisional one, redrawn by `scripts/icons.sh` from `public/icon.svg`, is in place), chosen product name, signing/notarization, update strategy
 - Re-review metadata provider terms, attribution, image rights, bundled dependency licenses, and logo use before distributing
 
 ## Later

@@ -31,7 +31,8 @@
 - **Real exFAT, FAT, or SMB volumes.** The rename fallback is tested by simulating a failing hard link.
 - **Windows and macOS.** CI runs the type check, the tests and an unpacked package build on both, and they pass. The app has not been opened on either; keychain storage, native dialogs and real libraries there are untested.
 - **Screen readers and real keyboard-only use.** The audit is automated and the key presses were synthetic; nobody has used the app with a screen reader or without a mouse. Windows high-contrast mode has styles but was not viewed. Narrow windows were not viewed.
-- Installer generation, signing/notarization, and Plex ingestion of the resulting library.
+- **The release workflow.** The Linux AppImage was built locally and `scripts/checksums.sh` was run on it and on empty, badly named and altered folders. The workflow itself has not run: no Windows or macOS installer has been built, and no release has been drafted.
+- Signing/notarization, and Plex ingestion of the resulting library.
 
 ## Dependency audit
 

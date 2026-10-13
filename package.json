@@ -42,6 +42,7 @@
     "appId": "org.organtic.desktop",
     "productName": "Organtic",
     "icon": "public/icon.png",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "files": [
       "dist/**/*",
       "build/**/*",
