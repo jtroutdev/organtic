@@ -28,6 +28,7 @@
 - [x] Generated-name tests for parsing and naming, and apply and undo stopped at every step and journal record
 - [x] Packaging-tool advisories cleared; the full dependency audit is clean
 - [x] Failures made plain: what an import could not read, what became of each change in a batch that stopped and why, and a check for a read-only or full disk before anything moves
+- [x] Contribution and security policies, with private vulnerability reporting switched on
 - [x] Optional poster, backdrop and season poster downloads
 - [x] Moving existing NFO files and artwork with their video, folder or show
 - [x] DVD and other alternate episode orderings
@@ -46,7 +47,7 @@
 - Execute Windows/macOS/Linux CI and native integration tests on representative local, network, and removable filesystems
 - Validate Kodi/Plex/Jellyfin names and metadata against real libraries
 - Validate native file dialogs, screen readers, focus order, keyboard-only flow, high-DPI rendering, and large libraries
-- Final application icon (a provisional one, redrawn by `scripts/icons.sh` from `public/icon.svg`, is in place), chosen product name, signing/notarization, release checksums, update strategy, contribution/security policies
+- Final application icon (a provisional one, redrawn by `scripts/icons.sh` from `public/icon.svg`, is in place), chosen product name, signing/notarization, release checksums, update strategy
 - Re-review metadata provider terms, attribution, image rights, bundled dependency licenses, and logo use before distributing
 
 ## Later
