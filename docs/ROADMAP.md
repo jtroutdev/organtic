@@ -46,7 +46,7 @@
 - Execute Windows/macOS/Linux CI and native integration tests on representative local, network, and removable filesystems
 - Validate Kodi/Plex/Jellyfin names and metadata against real libraries
 - Validate native file dialogs, screen readers, focus order, keyboard-only flow, high-DPI rendering, and large libraries
-- Application icon, chosen product name, signing/notarization, release checksums, update strategy, contribution/security policies
+- Final application icon (a provisional one, redrawn by `scripts/icons.sh` from `public/icon.svg`, is in place), chosen product name, signing/notarization, release checksums, update strategy, contribution/security policies
 - Re-review metadata provider terms, attribution, image rights, bundled dependency licenses, and logo use before distributing
 
 ## Later

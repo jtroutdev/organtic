@@ -41,6 +41,7 @@
   "build": {
     "appId": "org.organtic.desktop",
     "productName": "Organtic",
+    "icon": "public/icon.png",
     "files": [
       "dist/**/*",
       "build/**/*",
@@ -58,6 +59,7 @@
       "category": "Utility"
     },
     "mac": {
+      "icon": "assets/icon-mac.png",
       "target": [
         "dmg"
       ],
