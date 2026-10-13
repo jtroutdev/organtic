@@ -16,7 +16,9 @@ Local-first, keyboard-friendly, and nothing moves that the preview did not show.
 
 </div>
 
----
+<p align="center">
+  <img src="docs/screenshots/matching.png" width="900" alt="The Matching step: a queue of groups on the left, and the selected show's match and each file's current and new name on the right">
+</p>
 
 Organtic is an independent desktop application built with Electron and Vue on a reusable TypeScript core. Original code is MIT licensed. This is an early development version.
 
@@ -141,6 +143,10 @@ Work down the list. Each group shows a note saying how it was read and matched, 
 
 Preview opens once every group is confirmed or removed.
 
+<p align="center">
+  <img src="docs/screenshots/preview.png" width="900" alt="The Preview step: counts of what will change, the confirmed groups, and the selected show's new folders and file names">
+</p>
+
 - The confirmed groups are shown as a folder tree with counts. While the preview is being built the page keeps its shape, outlined.
 - Problems such as two different episodes getting the same name are shown on the files involved and block Apply until one is left out.
 - [Copies of the same title](#copies-of-the-same-title) are kept as versions, and likely exact duplicates are pointed out with an offer to leave them out.
@@ -155,6 +161,10 @@ Preview opens once every group is confirmed or removed.
 ### History and Settings
 
 **History** lists every batch and can undo it. For a batch that stopped, it shows what became of each change (done, failed, skipped or not started), with the reason it stopped given once at the top. A batch the app died in is told apart from one that failed.
+
+<p align="center">
+  <img src="docs/screenshots/history.png" width="900" alt="History: a batch that stopped when the disk filled, with each change marked done, skipped, failed or not started">
+</p>
 
 **Settings** has three parts:
 
@@ -194,6 +204,10 @@ Settings offers a **Plex** preset (the default), a **Jellyfin** preset, and **Cu
 | `{tmdbid}` `{tvdbid}` `{imdbid}` | Each ID individually |
 
 `/` starts a folder. A placeholder with no value is dropped along with its empty brackets.
+
+<p align="center">
+  <img src="docs/screenshots/settings.png" width="900" alt="Settings, Naming: the preset selector, the film and episode templates with an example under each, and the placeholders">
+</p>
 
 - The Plex preset names folders by title and year alone, which is what Plex matches on. Its optional `{tmdb-…}` folder tag is left out, because braces have to be written as `%7B` and `%7D` wherever a path becomes a URL. A custom template can add the tag back as `{{idsource}-{id}}`.
 - The Jellyfin preset keeps that player's `[tmdbid-…]` tag.
@@ -391,6 +405,8 @@ By default files are organised into Plex folders (`Show (2022)/Season 01/…`, `
 - **One drive per group.** Files are never moved across volumes.
 - **Not supported.** Disc structures, music, and embedded container metadata.
 - **Not yet done.** Installers are unsigned, only Linux has been built locally, and the no-hard-link fallback has not been run on real exFAT or SMB volumes.
+
+The screenshots are of the dark theme in example mode, which uses example files and a canned catalogue.
 
 ## More documentation
 
