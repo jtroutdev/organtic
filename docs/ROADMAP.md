@@ -49,7 +49,7 @@
 - Validate Kodi/Plex/Jellyfin names and metadata against real libraries
 - Validate native file dialogs, screen readers, focus order, keyboard-only flow, high-DPI rendering, and large libraries
 - Final application icon (a provisional one, redrawn by `scripts/icons.sh` from `public/icon.svg`, is in place), chosen product name, signing/notarization, update strategy
-- Re-review metadata provider terms, attribution, image rights, bundled dependency licenses, and logo use before distributing
+- Ask TheTVDB and Kitsu whether the way the app uses their APIs is permitted, and decide the distribution model against TMDB's non-commercial terms (the 12 October 2026 review is in THIRD_PARTY_NOTICES.md)
 
 ## Later
 

@@ -35,6 +35,8 @@ const REFERENCES: Record<string, string> = {
   tvmaze: "https://www.tvmaze.com",
   license: "https://creativecommons.org/licenses/by-sa/4.0/",
   tvdb: "https://thetvdb.com/api-information",
+  tvdbHome: "https://thetvdb.com",
+  kitsu: "https://kitsu.app",
 };
 
 let mainWindow: BrowserWindow | undefined;
