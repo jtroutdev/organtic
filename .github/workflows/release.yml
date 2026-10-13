@@ -1,0 +1,69 @@
+name: Release
+# Pushing a tag such as v0.2.0 builds the installers and drafts a release holding them and
+# SHA256SUMS.txt. Run by hand, it builds and checksums the installers without drafting anything.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Check the tag matches the version in package.json
+        if: github.ref_type == 'tag'
+        run: |
+          version="v$(node -p "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).version")"
+          if [ "$version" != "$GITHUB_REF_NAME" ]; then
+            echo "The tag is $GITHUB_REF_NAME but package.json says $version." >&2
+            exit 1
+          fi
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run dist -- --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ matrix.os }}
+          path: |
+            release/*.AppImage
+            release/*.dmg
+            release/*.exe
+          if-no-files-found: error
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: installers-*
+          merge-multiple: true
+          path: installers
+      - run: sh scripts/checksums.sh installers
+      - uses: actions/upload-artifact@v4
+        with:
+          name: checksums
+          path: installers/SHA256SUMS.txt
+      # A draft: nothing is public until it is published by hand.
+      - name: Draft the release
+        if: github.ref_type == 'tag'
+        run: gh release create "$GITHUB_REF_NAME" installers/* --draft --verify-tag --generate-notes --title "Organtic ${GITHUB_REF_NAME#v}"
+        env:
+          GH_TOKEN: ${{ github.token }}
