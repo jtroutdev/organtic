@@ -52,7 +52,6 @@
 - Validate native file dialogs, screen readers, focus order, keyboard-only flow, high-DPI rendering, and large libraries
 - Final application icon, with a version drawn for 16 pixels (a provisional one, redrawn by `scripts/icons.sh` from `public/icon.svg`, is in place), signing/notarization, update strategy
 - Decide whether to build for Intel Macs; the release workflow makes an Apple silicon `.dmg` only
-- Set `desktopName` so Linux desktops tie the window to its launcher; electron-builder warns that it is missing
 - Ask TheTVDB and Kitsu whether the way the app uses their APIs is permitted, and decide the distribution model against TMDB's non-commercial terms (the 12 October 2026 review is in THIRD_PARTY_NOTICES.md)
 
 ## Later
