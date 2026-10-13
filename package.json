@@ -12,6 +12,7 @@
   "homepage": "https://github.com/jtroutdev/organtic",
   "type": "module",
   "main": "build/desktop/main.js",
+  "desktopName": "organtic.desktop",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "typecheck": "node scripts/tsc.cjs -p tsconfig.json && node scripts/tsc.cjs -p tsconfig.app.json && node scripts/vue-tsc.cjs -p tsconfig.vue.json",
@@ -55,6 +56,7 @@
       "output": "release"
     },
     "linux": {
+      "syncDesktopName": true,
       "target": [
         "AppImage"
       ],
