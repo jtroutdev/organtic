@@ -230,6 +230,7 @@ Settings offers a **Plex** preset (the default), a **Jellyfin** preset, and **Cu
 - A file with no usable number is matched by the episode name in its filename when exactly one episode of the show is a close fit; a name that fits none, or more than one, is reported for the file.
 - Collection folders (`Show Complete Season 5`, `Show - The Complete Series`, `Show Seasons 1-20`) give the show's name without the collection words, and a shorter name in a file takes the fuller one from its folder.
 - Bracketed and braced blocks such as `[Group]` and `{C_P}` are dropped.
+- A film's year is the last year in the name, so `2001.A.Space.Odyssey.1968` and `1917.2019` keep the number in the title. A year in parentheses or square brackets in front, as in `(1999) The Matrix` or `[1999] The Matrix`, is read as the year. A bare year in front, as in `1999 - The Matrix`, is searched as written first and then as the year (see [How a search works](#how-a-search-works)).
 - Samples, trailers, and Plex extras folders are flagged.
 
 ### Episode order
@@ -273,6 +274,7 @@ Embedded container metadata is not implemented.
 
 - Every search sends the entered title and filters to all the sources for that group at once: TMDB when a token is set, TVmaze for shows, and Kitsu for groups searched as anime. A title is never sent to Kitsu otherwise.
 - Results are ranked together by how well they fit the filename. The same title from two sources is not treated as a conflict; the source searched first is suggested.
+- When a name starting with a year, such as `1999 - The Matrix`, finds no certain match as written, the rest of the name is searched again with that number as the year. The group says when its match was found this way.
 - A source that cannot be reached is named on the group and the others' results are still offered. Provider errors are displayed as errors, not empty successful searches.
 - Search does not upload media bytes or full local paths. No analytics, accounts, background scans, or automatic rename jobs are included.
 
