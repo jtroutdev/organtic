@@ -227,6 +227,24 @@ test("films need a TMDB token, extras can be included, and the destination can c
   assert.match(offline.state().groups[0]!.reason, /Add a TMDB token/);
 });
 
+test("a leading year is tried as the year when the name as written finds nothing", async (t) => {
+  const { group } = await setup(t, [
+    "1972 - Solaris.mkv",
+    "2002 Solaris (2002).mkv",
+    "Arrival.mkv",
+    "2016 Arrival.mkv",
+    "1999 - Solaris.mkv",
+  ]);
+  for (const [title, id] of [["1972 - Solaris", 593], ["2002 Solaris", 2103], ["2016 Arrival", 329865]] as const) {
+    assert.equal(group(title).status, "suggested", title);
+    assert.equal(group(title).candidates[0]!.id, id, title);
+    assert.match(group(title).reason, /reading the number in front of the name as its year/, title);
+  }
+  // The name as written is searched first, and a year with nothing to match is not forced.
+  assert.doesNotMatch(group("Arrival").reason, /number in front/);
+  assert.equal(group("1999 - Solaris").status, "unmatched");
+});
+
 test("an imported show folder is renamed, and files left in the queue follow it", async (t) => {
   const { dir } = await setup(t, [
     "Severance/Severance.S01E01.1080p.mkv",

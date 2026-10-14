@@ -167,7 +167,9 @@ function skipReason(stem: string): SkipReason | null {
 export function parseStem(stem: string): ParsedName {
   const opened = stem
     .replace(BRACKETED_DOTTED, " $1x$2 ")
-    .replace(BRACKETED_MARKER, " $1 ");
+    .replace(BRACKETED_MARKER, " $1 ")
+    // A leading "[1999]" is a year, not a release group, and is read like "(1999)".
+    .replace(/^\s*\[((?:19|20)\d{2})\]/, "($1)");
   const releaseGroup = /^\[([^\]]+)\]/.exec(opened)?.[1] ?? null;
   // Bracketed blocks hold release details; parentheses are kept only around a year.
   const text = opened
@@ -246,9 +248,15 @@ export function parseStem(stem: string): ParsedName {
     markerIndex ?? text.length,
     technical?.index || text.length,
   );
-  const head = text.slice(0, headEnd);
-  // The last plausible year before any release details; a leading number is part of the title.
   const maxYear = new Date().getFullYear() + 1;
+  // A year in parentheses ahead of the title, as in "(1999) The Matrix", is the film's year.
+  const opening = /^\s*\(((?:19|20)\d{2})\)\s*/.exec(text);
+  const leadingYear =
+    opening && opening[0].length < headEnd && Number(opening[1]) <= maxYear
+      ? Number(opening[1])
+      : null;
+  const head = text.slice(leadingYear === null ? 0 : opening![0].length, headEnd);
+  // The last plausible year before any release details; a leading number is part of the title.
   const year = [...head.matchAll(/\b(19\d{2}|20\d{2})\b/g)]
     .filter((match) => match.index > 0 && Number(match[1]) <= maxYear)
     .at(-1);
@@ -260,7 +268,7 @@ export function parseStem(stem: string): ParsedName {
     tidy(tail.slice(0, TECHNICAL.exec(tail)?.index ?? tail.length)) || null;
   return {
     title,
-    year: year ? Number(year[1]) : null,
+    year: year ? Number(year[1]) : leadingYear,
     kind: markerIndex === undefined ? "movie" : "tv",
     season,
     episode,

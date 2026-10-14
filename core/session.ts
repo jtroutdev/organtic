@@ -58,6 +58,8 @@ interface Group {
   numbering: Catalogue;
   /** The other title an anime was found under, when Kitsu supplied it. */
   via?: string;
+  /** The title and year searched when the name's leading number was read as its year. */
+  yearFirst?: { title: string; year: number };
   /** Says which sources could not be searched, when some could. */
   missed?: string;
   /** Bumped whenever a lookup starts, so a slower earlier lookup cannot overwrite a newer one. */
@@ -583,6 +585,25 @@ export class Session {
         { title: group.query, year: group.year },
         found,
       );
+      // Some libraries put the year first: "1999 - The Matrix". A leading number is read as
+      // part of the title, as in "1917" or "2001 A Space Odyssey", so try it as the year
+      // only when the name as written finds nothing certain.
+      let yearFirst: Group["yearFirst"];
+      const leading = /^((?:19|20)\d{2})(?: *- *| +)(\S.*)$/.exec(group.query);
+      const wanted = leading && { title: leading[2]!, year: Number(leading[1]) };
+      // A year later in the name rules this out, unless it is the same year again.
+      if (!confident && wanted && (group.year === null || group.year === wanted.year)) {
+        const again = rankCandidates(
+          wanted,
+          (await this.providers.searchAll({ ...input, query: wanted.title, year: wanted.year }))
+            .found,
+        );
+        if (lookup !== group.lookup || !this.groups.has(group.key)) return;
+        if (again.confident) {
+          ({ ranked, confident, rival } = again);
+          yearFirst = wanted;
+        }
+      }
       // Anime is often released under its romaji title, which general catalogues list
       // under the English one. Ask Kitsu what else it is called and try again.
       let via = "";
@@ -603,6 +624,7 @@ export class Session {
         if (lookup !== group.lookup || !this.groups.has(group.key)) return;
       }
       group.via = via;
+      group.yearFirst = yearFirst;
       group.candidates = ranked.map(({ candidate, score, fit }) => ({
         ...candidate,
         fit,
@@ -718,6 +740,9 @@ export class Session {
           : `${candidate.fit}, so this is the closest result rather than a certain match.`,
       group.via && status !== "confirmed"
         ? `Found under its other title “${group.via}”, which Kitsu lists for “${group.query}”.`
+        : "",
+      group.yearFirst && status !== "confirmed"
+        ? `Searched as “${group.yearFirst.title}” from ${group.yearFirst.year}, reading the number in front of the name as its year.`
         : "",
       status !== "confirmed" ? group.missed : "",
       absolute

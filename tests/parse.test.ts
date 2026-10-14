@@ -33,6 +33,12 @@ test("extracts movie title and year without release tags", () => {
     ["Arrival (2016) [1080p] [x265].mp4", "Arrival", 2016],
     ["Rocky - 2.mkv", "Rocky - 2", null],
     ["300.mkv", "300", null],
+    // A year in parentheses ahead of the title is the year; a bare one stays in the title.
+    ["(1999) The Matrix.mkv", "The Matrix", 1999],
+    ["(2019) 1917 [1080p].mkv", "1917", 2019],
+    ["[1999] The Matrix.mkv", "The Matrix", 1999],
+    ["[1999].The.Matrix.1080p.mkv", "The Matrix", 1999],
+    ["1999 - The Matrix.mkv", "1999 - The Matrix", null],
   ];
   for (const [name, title, year] of cases)
     assert.deepEqual(
