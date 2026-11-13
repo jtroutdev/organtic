@@ -133,6 +133,8 @@ export class Session {
   /** The group order the last update gave. */
   private sentOrder: string[] = [];
   private flushPending = false;
+  /** How many files are described before other work is let in. */
+  private describeEvery: number;
 
   constructor(options: {
     providers: Providers;
@@ -144,12 +146,18 @@ export class Session {
      * together. Defaults to the next microtask; the desktop app waits about a frame.
      */
     defer?: (flush: () => void) => void;
+    /**
+     * How many files an update describes before it lets other work run, so a change to every
+     * group of a large library does not hold up the process. Default 2,000.
+     */
+    describeEvery?: number;
   }) {
     this.providers = options.providers;
     this.planner = options.planner;
     this.settings = options.settings;
     this.onUpdate = options.onUpdate ?? (() => {});
     this.defer = options.defer ?? queueMicrotask;
+    this.describeEvery = options.describeEvery ?? 2000;
   }
 
   // ---- Reading ----
@@ -305,18 +313,36 @@ export class Session {
   private send() {
     if (this.flushPending) return;
     this.flushPending = true;
-    this.defer(() => this.flush());
+    this.defer(() => void this.flush());
   }
 
-  private flush() {
-    this.flushPending = false;
-    const groups: QueueGroup[] = [];
-    for (const key of this.dirty) {
+  /**
+   * Describes the changed groups, a slice at a time, and sends them as one update. A group
+   * that changes while other work runs between slices is described again, so the update
+   * matches the queue as it is when it is sent.
+   */
+  private async flush() {
+    const described = new Map<string, QueueGroup>();
+    let files = 0;
+    while (this.dirty.size) {
+      const key: string = this.dirty.values().next().value!;
       const group = this.groups.get(key);
-      if (group) groups.push(this.cached(group));
-      else this.described.delete(key);
+      if (group) {
+        described.set(key, this.cached(group));
+        files += group.fileIds.length;
+      } else {
+        described.delete(key);
+        this.described.delete(key);
+      }
+      this.dirty.delete(key);
+      if (files >= this.describeEvery && this.dirty.size) {
+        files = 0;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
     }
-    this.dirty.clear();
+    this.flushPending = false;
+    // A group removed while other work ran is no longer sent.
+    const groups = [...described.values()].filter((group) => this.groups.has(group.key));
     const update: QueueUpdate = { groups, lookups: this.lookups() };
     const order = [...this.groups.keys()];
     if (
@@ -1001,8 +1027,24 @@ export class Session {
     const shownRoot = (root: string) =>
       renames.some((op) => op.source === root) ? parentOf(root) : root;
     const attached = new Set<object>();
-    const problemFor = (match: (issue: Plan["issues"][number]) => boolean) => {
-      const found = plan.issues.filter(match);
+    // Each file's plan and problems, found by path rather than by going through the plan.
+    const bySource = new Map<string, Plan["previews"][number]>();
+    for (const item of plan.previews)
+      if (!bySource.has(item.source)) bySource.set(item.source, item);
+    const issuesAt = (field: "source" | "target") => {
+      const found = new Map<string, Plan["issues"]>();
+      for (const issue of plan.issues) {
+        const at = issue[field];
+        if (at === undefined) continue;
+        const list = found.get(at) ?? [];
+        list.push(issue);
+        found.set(at, list);
+      }
+      return found;
+    };
+    const issuesBySource = issuesAt("source"),
+      issuesByTarget = issuesAt("target");
+    const problemFor = (found: Plan["issues"] = []) => {
       found.forEach((issue) => attached.add(issue));
       return found.length ? found.map((issue) => issue.message).join(" ") : null;
     };
@@ -1023,8 +1065,8 @@ export class Session {
         };
         groups.set(group.key, entry);
       }
-      const planned = plan.previews.find((item) => item.source === file.path);
-      const failed = problemFor((issue) => issue.source === file.path);
+      const planned = bySource.get(file.path);
+      const failed = problemFor(issuesBySource.get(file.path));
       if (failed) entry.problems.push(`${file.name}: ${failed}`);
       for (const { source: from, target, artwork, note } of planned?.changes ?? []) {
         const item: PreviewItem = {
@@ -1039,7 +1081,7 @@ export class Session {
                   : "video",
           to: shown(target, file.root),
           from: from && relativeTo(from, this.files.get(file.id)!.root),
-          problem: problemFor((issue) => issue.target === target),
+          problem: problemFor(issuesByTarget.get(target)),
           note: note ?? null,
         };
         entry.items.push(item);
