@@ -28,8 +28,10 @@ import type {
 /** The filesystem half of the engine, injected so the queue logic runs anywhere. */
 export interface Planner {
   createPlan(selections: Selection[], options: PlanOptions): Promise<Plan>;
+  /** Stops between operations when `signal` is aborted. */
   applyPlan(
     plan: Plan,
+    signal?: AbortSignal,
   ): Promise<{
     id: string;
     completed: number;
@@ -1028,14 +1030,14 @@ export class Session {
    * first change, because a check found something different since Preview, leaves the
    * queue as it was.
    */
-  async apply(id: string) {
+  async apply(id: string, signal?: AbortSignal) {
     const pending = this.plan;
     if (!pending || pending.plan.id !== id)
       throw new Error("The queue changed. Open Preview again first.");
     let renamed: { from: string; to: string }[] = [];
     let started = true;
     try {
-      const result = await this.planner.applyPlan(pending.plan);
+      const result = await this.planner.applyPlan(pending.plan, signal);
       renamed = result.renamed ?? [];
       return result;
     } catch (error) {

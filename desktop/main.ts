@@ -23,6 +23,8 @@ import {
   undoBatch,
 } from "../core/files.ts";
 import { Session } from "../core/session.ts";
+import { ExitGuard } from "./exitGuard.ts";
+import type { BatchKind, ExitChoice } from "./exitGuard.ts";
 import { DEFAULT_SETTINGS, mergeSettings } from "../core/settings.ts";
 import type { MediaApi } from "../core/api.ts";
 import type { SourcesState } from "../core/types.ts";
@@ -40,19 +42,39 @@ const REFERENCES: Record<string, string> = {
 };
 
 let mainWindow: BrowserWindow | undefined;
-let mutationBusy = false;
-async function exclusive<T>(action: () => Promise<T>): Promise<T> {
-  if (mutationBusy)
-    throw new Error(
-      "A file operation is already running. Wait for it to finish.",
-    );
-  mutationBusy = true;
-  try {
-    return await action();
-  } finally {
-    mutationBusy = false;
-  }
-}
+
+const EXIT_CHOICES: ExitChoice[] = ["keep", "wait", "stop"];
+const EXIT_WORDING: Record<BatchKind, { message: string; detail: string }> = {
+  apply: {
+    message: "A batch is still renaming files.",
+    detail:
+      "Stopping finishes the file in hand and records where the batch stopped, so History can undo what was done.",
+  },
+  undo: {
+    message: "A batch is still being undone.",
+    detail:
+      "Stopping finishes the file in hand. Undo the batch again from History to put back the rest.",
+  },
+};
+// File operations run one at a time, and closing or quitting during one asks first.
+const guard = new ExitGuard({
+  ask: async (kind) => {
+    const options = {
+      type: "warning" as const,
+      title: "Close Organtic?",
+      ...EXIT_WORDING[kind],
+      buttons: ["Keep open", "Close when finished", "Stop and close"],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    };
+    const { response } = mainWindow
+      ? await dialog.showMessageBox(mainWindow, options)
+      : await dialog.showMessageBox(options);
+    return EXIT_CHOICES[response] ?? "keep";
+  },
+  exit: (how) => (how === "quit" || !mainWindow ? app.quit() : mainWindow.close()),
+});
 
 async function start() {
   const userData = app.getPath("userData");
@@ -132,7 +154,7 @@ async function start() {
           }
         return plan;
       },
-      applyPlan: (plan) => applyPlan(plan, journalDir),
+      applyPlan: (plan, signal) => applyPlan(plan, journalDir, undefined, signal),
     },
     onChange: (queue) => mainWindow?.webContents.send("media:queue", queue),
   });
@@ -270,7 +292,7 @@ async function start() {
   register("resetDestination", async (key) => session.setDestination(key, null));
   register("preview", () => session.preview());
   register("apply", (id) =>
-    exclusive(async () => {
+    guard.run("apply", async (signal) => {
       const plan = session.pending(id);
       if (!plan)
         throw new Error("The queue changed. Open Preview again first.");
@@ -280,23 +302,31 @@ async function start() {
         "The batch is recorded in History so it can be undone. Existing files are never overwritten.",
         "Apply changes",
       );
-      if (!confirmed) return { canceled: true };
-      return await session.apply(id);
+      // Asked to stop while the confirmation was open.
+      if (!confirmed || signal.aborted) return { canceled: true };
+      return await session.apply(id, signal);
     }),
   );
   register("history", () => history(journalDir));
   register("undo", (id) =>
-    exclusive(async () => {
+    guard.run("undo", async (signal) => {
       const confirmed = await confirmDialog(
         "Undo this batch?",
         "Restore the original names and locations?",
         "Folders and metadata files the batch created are removed only if they are unchanged. Undo stops at any conflict.",
         "Undo batch",
       );
-      if (!confirmed) return { canceled: true };
-      const { renamed } = await undoBatch(id, journalDir);
-      // Files still queued under a folder that got its old name back are followed there.
-      if (renamed.length) session.relocate(renamed);
+      if (!confirmed || signal.aborted) return { canceled: true };
+      // Files still queued under a folder that got its old name back are followed there,
+      // also when the undo stopped part-way.
+      try {
+        const { renamed } = await undoBatch(id, journalDir, undefined, signal);
+        if (renamed.length) session.relocate(renamed);
+      } catch (error) {
+        const partial = (error as { renamed?: unknown } | null)?.renamed;
+        if (Array.isArray(partial) && partial.length) session.relocate(partial);
+        throw error;
+      }
       return {};
     }),
   );
@@ -405,6 +435,10 @@ async function start() {
         }
       });
     }
+    mainWindow.on("close", (event) => {
+      if (!guard.request("close")) event.preventDefault();
+    });
+    mainWindow.on("closed", () => (mainWindow = undefined));
     mainWindow.loadURL(uiUrl);
   }
   // macOS keeps its menu: it sits in the system bar, not the window, and
@@ -420,6 +454,9 @@ async function start() {
       : null,
   );
   createWindow();
+  app.on("before-quit", (event) => {
+    if (!guard.request("quit")) event.preventDefault();
+  });
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
