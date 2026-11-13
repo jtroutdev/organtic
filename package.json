@@ -19,6 +19,7 @@
     "build": "vite build && node scripts/tsc.cjs -p tsconfig.build.json",
     "start": "npm run build && electron .",
     "test": "node --test --test-isolation=none tests/*.test.ts",
+    "bench": "node scripts/benchmark.ts",
     "package": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder"
   },

@@ -78,6 +78,7 @@ npm start          # Build and launch the desktop app
 npm run typecheck
 npm test
 npm run build
+npm run bench      # Timings on a generated library; see the performance budget
 ```
 
 Type check, tests and build all pass before a pull request is opened.
