@@ -8,6 +8,7 @@ import {
   scanPaths,
   createPlan,
   applyPlan,
+  BatchNotStarted,
   checkRoom,
   history,
   messageOf,
@@ -108,7 +109,12 @@ test("history says what became of each change in a batch that stopped", async (t
     },
     rename: fs.rename,
   };
-  await assert.rejects(applyPlan(lib.plan, lib.journals, io), /Stopped after \d+ operations: The disk is full: /);
+  await assert.rejects(applyPlan(lib.plan, lib.journals, io), (error) => {
+    // It stopped part-way, so the queue must not keep these files.
+    assert.ok(!(error instanceof BatchNotStarted));
+    assert.match((error as Error).message, /Stopped after \d+ operations: The disk is full: /);
+    return true;
+  });
   const [batch] = await history(lib.journals);
   const target = lib.plan.operations[second]!.target;
   assert.equal(batch!.status, "interrupted");

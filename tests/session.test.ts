@@ -162,6 +162,30 @@ test("confirming, previewing and applying renames files and keeps the rest of th
   );
 });
 
+test("a batch stopped by its checks keeps the queue, and a fresh preview applies", async (t) => {
+  const { session, group, dir } = await setup(t, ["Severance.S01E01.mkv", "Arrival.2016.mkv"]);
+  session.confirmSuggested();
+  const stale = await session.preview();
+  await fs.writeFile(path.join(dir, "Arrival.2016.mkv"), "rewritten since preview");
+  await assert.rejects(session.apply(stale.id), { name: "Error", started: false, message: /source changed/ });
+  // Nothing moved, and every confirmation is still there.
+  await fs.access(path.join(dir, "Severance.S01E01.mkv"));
+  assert.deepEqual(
+    session.state().groups.map((g) => [g.parsedTitle, g.status, g.files.length]),
+    [["Arrival", "confirmed", 1], ["Severance", "confirmed", 1]],
+  );
+  assert.equal(session.pending(stale.id), null);
+  assert.deepEqual(await fs.readdir(path.join(dir, ".journals")).catch(() => []), []);
+
+  const fresh = await session.preview();
+  assert.equal(fresh.blocked, false);
+  assert.equal((await session.apply(fresh.id)).completed, fresh.counts.operations);
+  await fs.access(path.join(dir, "Arrival (2016)/Arrival (2016).mkv"));
+  await fs.access(path.join(dir, "Severance (2022)/Season 01/Severance (2022) - S01E01 - Part 1.mkv"));
+  assert.deepEqual(session.state().groups, []);
+  assert.equal(group("Arrival"), undefined);
+});
+
 test("choosing, searching again and changing settings update the queue", async (t) => {
   const { session, group } = await setup(t, ["Solaris.mkv", "Movies/Arival.2016.mkv"]);
   await session.choose(group("Solaris").key, 1);

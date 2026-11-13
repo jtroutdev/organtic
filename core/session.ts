@@ -1024,13 +1024,16 @@ export class Session {
 
   /**
    * Applies the previewed plan. Renamed files leave the queue; everything else stays,
-   * including files of the same groups that were left out.
+   * including files of the same groups that were left out. A batch that stops before its
+   * first change, because a check found something different since Preview, leaves the
+   * queue as it was.
    */
   async apply(id: string) {
     const pending = this.plan;
     if (!pending || pending.plan.id !== id)
       throw new Error("The queue changed. Open Preview again first.");
     let renamed: { from: string; to: string }[] = [];
+    let started = true;
     try {
       const result = await this.planner.applyPlan(pending.plan);
       renamed = result.renamed ?? [];
@@ -1038,26 +1041,34 @@ export class Session {
     } catch (error) {
       const partial = (error as { renamed?: unknown } | null)?.renamed;
       if (Array.isArray(partial)) renamed = partial;
+      started = (error as { started?: unknown } | null)?.started !== false;
       throw error;
     } finally {
-      // Whether or not every operation ran, these paths can no longer be trusted.
-      const gone = new Set(pending.fileIds);
-      for (const fileId of gone) {
-        this.files.delete(fileId);
-        this.excluded.delete(fileId);
-      }
-      for (const group of [...this.groups.values()]) {
-        if (!group.fileIds.some((fileId) => gone.has(fileId))) continue;
-        group.fileIds = group.fileIds.filter((fileId) => !gone.has(fileId));
-        if (!group.fileIds.length) this.groups.delete(group.key);
-        else {
-          group.status = "review";
-          group.reason =
-            "The rest of this group was renamed. These files were left where they are.";
-        }
-      }
-      this.relocate(renamed);
+      // Stopped before the first change: every file is where the queue says, so it all
+      // stays, confirmations included. The plan is dropped so Preview checks again.
+      if (!started) this.changed();
+      else this.forget(pending.fileIds, renamed);
     }
+  }
+
+  /** Takes a batch's files out of the queue: whether or not every operation ran, their paths can no longer be trusted. */
+  private forget(fileIds: string[], renamed: { from: string; to: string }[]) {
+    const gone = new Set(fileIds);
+    for (const fileId of gone) {
+      this.files.delete(fileId);
+      this.excluded.delete(fileId);
+    }
+    for (const group of [...this.groups.values()]) {
+      if (!group.fileIds.some((fileId) => gone.has(fileId))) continue;
+      group.fileIds = group.fileIds.filter((fileId) => !gone.has(fileId));
+      if (!group.fileIds.length) this.groups.delete(group.key);
+      else {
+        group.status = "review";
+        group.reason =
+          "The rest of this group was renamed. These files were left where they are.";
+      }
+    }
+    this.relocate(renamed);
   }
 
   /** Follows folders that were renamed, by a batch or by undoing one, so queued files are still found. */

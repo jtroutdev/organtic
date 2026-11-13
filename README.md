@@ -164,7 +164,7 @@ Preview opens once every group is confirmed or removed.
 
 ### 4. Apply
 
-**Apply** opens a native confirmation. Renamed files leave the queue; everything else stays. The wizard ends on **Done**, which says how many operations completed and where.
+**Apply** opens a native confirmation. Renamed files leave the queue; everything else stays. If a file changed or a destination appeared since the preview, the batch stops before renaming anything, the queue keeps every confirmed match, and Preview is built again for you to check and apply. The wizard ends on **Done**, which says how many operations completed and where.
 
 ### History and Settings
 
