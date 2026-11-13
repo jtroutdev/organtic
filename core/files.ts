@@ -924,6 +924,9 @@ export class BatchNotStarted extends Error {
   readonly started = false;
 }
 
+/** The journal format this build writes, and the newest it can read. */
+export const JOURNAL_VERSION = 1;
+
 /** What a batch or an undo reports when it was asked to stop between operations. */
 export const STOPPED = "You stopped the batch.";
 
@@ -949,7 +952,7 @@ export async function applyPlan(
   try {
     await fs.writeFile(journal, "", { flag: "wx", mode: 0o600 });
     created = true;
-    await append(journal, { type: "plan", plan });
+    await append(journal, { type: "plan", version: JOURNAL_VERSION, plan });
   } catch (error) {
     // The record is written before the first change, so a batch without one never began.
     // Only a record this call made is removed; one already there belongs to another batch.
@@ -1095,6 +1098,12 @@ async function readJournal(file: string, repairTail = false) {
   }
   const first = events[0];
   if (first?.type !== "plan") throw new Error("Journal is missing its plan.");
+  // Journals written before the format had a version are version 1.
+  const version = first.version ?? 1;
+  if (!Number.isInteger(version) || version < 1 || version > JOURNAL_VERSION)
+    throw new Error(
+      "This history record was written by a newer version of Organtic. Update the app to read or undo it.",
+    );
   return { plan: first.plan, events };
 }
 
@@ -1246,6 +1255,17 @@ export async function undoBatch(
       }
     } else {
       const source = await exists(op.source);
+      // Started but never done, with the file still at its old name and something else at the
+      // new one: the move never happened, and what is at the target is not this batch's to touch.
+      if (
+        target &&
+        same(source, op.fingerprint) &&
+        (target.dev !== source!.dev || target.ino !== source!.ino) &&
+        !events.some((e) => e.type === "done" && e.index === index)
+      ) {
+        await append(file, { type: "undo-done", index });
+        continue;
+      }
       if (source && !same(source, op.fingerprint))
         throw new Error(
           `Original path is occupied; recovery stopped: ${op.source}`,
