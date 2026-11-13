@@ -39,7 +39,7 @@ npm test
 npm run build
 ```
 
-CI runs the same checks, and an unpacked package build, on Linux, Windows and macOS.
+CI runs the same checks, and an unpacked package build, on Linux, Windows and macOS, for every pull request and every push to `main`. It also runs `npm audit --audit-level=high`, which fails on a high or critical advisory in any dependency. Dependabot opens weekly update pull requests for npm packages and workflow actions.
 
 ## What a change needs
 
