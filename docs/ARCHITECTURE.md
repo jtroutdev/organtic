@@ -22,6 +22,8 @@ The referenced [FileBot fork's license](https://github.com/mobeigi/filebot/blob/
 | `src/`                | Vue interface: one store; a wizard (Add files, Review, Preview, Done) plus History and Settings, on a shared split view |
 | `desktop/main.ts`     | Native dialogs, saved settings, keychain-encrypted token, IPC sender checks; owns the session                  |
 | `desktop/exitGuard.ts` | Runs apply and undo one at a time, and asks before the window closes or the app quits during one             |
+| `desktop/settingsFile.ts` | Reads saved settings, moving an unusable file aside; writes them to a temporary file and renames it into place |
+| `desktop/appLog.ts`   | The log for bug reports: start-up and errors only, home folder as `~`, tokens and keys hidden, two files of 256 KB |
 | `desktop/preload.cjs` | Narrow named commands exposed across context isolation                                                        |
 | `core/parse.ts`       | Filename and folder hints: titles, years, season/episode, multi-episode ranges, absolute numbers, extras      |
 | `core/group.ts`       | Grouping files by show or movie; ranking provider candidates and deciding when a match needs review           |

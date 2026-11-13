@@ -23,9 +23,11 @@ import {
   undoBatch,
 } from "../core/files.ts";
 import { Session } from "../core/session.ts";
+import { AppLog } from "./appLog.ts";
 import { ExitGuard } from "./exitGuard.ts";
+import { readSettings, writeSettings, UNREADABLE_NAME } from "./settingsFile.ts";
 import type { BatchKind, ExitChoice } from "./exitGuard.ts";
-import { DEFAULT_SETTINGS, mergeSettings } from "../core/settings.ts";
+import { mergeSettings } from "../core/settings.ts";
 import type { MediaApi } from "../core/api.ts";
 import type { SourcesState } from "../core/types.ts";
 
@@ -42,6 +44,14 @@ const REFERENCES: Record<string, string> = {
 };
 
 let mainWindow: BrowserWindow | undefined;
+
+// Problems are written here for bug reports; see AppLog for what it may hold.
+const log = new AppLog({
+  file: path.join(app.getPath("userData"), "logs", "organtic.log"),
+  home: app.getPath("home"),
+});
+process.on("uncaughtExceptionMonitor", (error) => log.error("Uncaught", error));
+process.on("unhandledRejection", (reason) => log.error("Unhandled", reason));
 
 const EXIT_CHOICES: ExitChoice[] = ["keep", "wait", "stop"];
 const EXIT_WORDING: Record<BatchKind, { message: string; detail: string }> = {
@@ -83,13 +93,17 @@ async function start() {
   const tokenFile = path.join(userData, "tmdb-token");
   const uiUrl = pathToFileURL(path.join(root, "dist/index.html")).href;
 
-  let settings = DEFAULT_SETTINGS;
-  try {
-    settings = mergeSettings(
-      JSON.parse(await fs.readFile(settingsFile, "utf8")),
-    );
-  } catch {
-    // Missing or unusable settings fall back to the defaults.
+  log.info(
+    `Organtic ${app.getVersion()} on ${process.platform} ${process.arch} ${process.getSystemVersion()}, Electron ${process.versions.electron}`,
+  );
+  const read = await readSettings(settingsFile);
+  let settings = read.settings;
+  let notice: string | undefined;
+  if (read.problem) {
+    log.error("Reading settings", read.problem);
+    notice = read.kept
+      ? `Your saved settings could not be read, so the defaults are in use. The old file is kept as ${UNREADABLE_NAME} in ${log.shown(userData)}.`
+      : "Your saved settings could not be read, so the defaults are in use.";
   }
 
   // Linux without a keyring falls back to a fixed key, which protects nothing.
@@ -115,9 +129,9 @@ async function start() {
   let tokenSaved = false;
   if (canSave)
     try {
-      providers.setToken(
-        safeStorage.decryptString(await fs.readFile(tokenFile)),
-      );
+      const token = safeStorage.decryptString(await fs.readFile(tokenFile));
+      log.secret(token);
+      providers.setToken(token);
       tokenSaved = providers.hasToken;
     } catch {
       // No saved token, or one this keychain can no longer read.
@@ -129,6 +143,8 @@ async function start() {
       const [key = "", pin = ""] = safeStorage
         .decryptString(await fs.readFile(tvdbFile))
         .split("\n");
+      log.secret(key);
+      log.secret(pin);
       providers.setTvdbKey(key, pin);
       tvdbSaved = providers.hasTvdbKey;
     } catch {
@@ -166,16 +182,22 @@ async function start() {
       "desktop" | "onQueue" | "addDropped"
     >]: MediaApi[K];
   } & { addPaths(paths: string[]): Promise<void> };
+  // A failure is logged, then reaches the window as it is.
   const register = <K extends keyof Handlers>(name: K, handler: Handlers[K]) =>
-    ipcMain.handle(`media:${name}`, (event, ...args: unknown[]) => {
-      if (
-        !mainWindow ||
-        event.sender !== mainWindow.webContents ||
-        event.senderFrame !== mainWindow.webContents.mainFrame ||
-        event.senderFrame.url !== uiUrl
-      )
-        throw new Error("Untrusted request.");
-      return (handler as (...args: unknown[]) => unknown)(...args);
+    ipcMain.handle(`media:${name}`, async (event, ...args: unknown[]) => {
+      try {
+        if (
+          !mainWindow ||
+          event.sender !== mainWindow.webContents ||
+          event.senderFrame !== mainWindow.webContents.mainFrame ||
+          event.senderFrame.url !== uiUrl
+        )
+          throw new Error("Untrusted request.");
+        return await (handler as (...args: unknown[]) => unknown)(...args);
+      } catch (error) {
+        log.error(name, error);
+        throw error;
+      }
     });
   const confirmDialog = async (
     title: string,
@@ -227,11 +249,18 @@ async function start() {
     await session.addFiles(await scanPaths(result.filePaths));
   }
 
-  register("load", async () => ({
-    queue: session.state(),
-    settings,
-    sources: sources(),
-  }));
+  register("load", async () => {
+    const shown = notice;
+    // Said once: a reload of the window does not repeat it.
+    notice = undefined;
+    return {
+      queue: session.state(),
+      settings,
+      sources: sources(),
+      about: { version: app.getVersion(), logFile: log.shown(log.file) },
+      ...(shown ? { notice: shown } : {}),
+    };
+  });
   register("addFiles", () => pick(false));
   register("addFolder", () => pick(true));
   register("addPaths", async (paths) => {
@@ -332,13 +361,13 @@ async function start() {
   );
   register("saveSettings", async (input) => {
     settings = mergeSettings(input, settings);
-    await fs.mkdir(userData, { recursive: true });
-    await fs.writeFile(settingsFile, JSON.stringify(settings, null, 2));
+    await writeSettings(settingsFile, settings);
     animeMap.enabled = settings.animeSeasons;
     session.updateSettings(settings);
     return settings;
   });
   register("setToken", async (token) => {
+    log.secret(String(token));
     providers.setToken(token);
     tokenSaved = false;
     if (canSave && providers.hasToken) {
@@ -355,6 +384,8 @@ async function start() {
     return sources();
   });
   register("setTvdbKey", async (key, pin) => {
+    log.secret(String(key));
+    log.secret(String(pin));
     providers.setTvdbKey(key, pin);
     tvdbSaved = false;
     if (!providers.hasTvdbKey) {
@@ -386,6 +417,11 @@ async function start() {
     const url = Object.hasOwn(REFERENCES, key) ? REFERENCES[key] : undefined;
     if (!url) throw new Error("Unknown reference.");
     await shell.openExternal(url);
+  });
+  register("showLog", async () => {
+    // Before anything has gone wrong there is no file to point at, so start one.
+    log.info("Log shown from Settings");
+    shell.showItemInFolder(log.file);
   });
   register("openSourcePage", async (address) => {
     const url = sourcePage(address);
@@ -469,7 +505,18 @@ async function start() {
 }
 
 if (!app.requestSingleInstanceLock()) app.quit();
-else app.whenReady().then(start);
+else
+  app
+    .whenReady()
+    .then(start)
+    .catch((error: unknown) => {
+      log.error("Start-up", error);
+      dialog.showErrorBox(
+        "Organtic could not start",
+        `${error instanceof Error ? error.message : String(error)}\n\nThe details are in ${log.shown(log.file)}.`,
+      );
+      app.exit(1);
+    });
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });

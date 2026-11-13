@@ -1,5 +1,5 @@
 import { reactive } from "vue";
-import type { MediaApi } from "../core/api.ts";
+import type { AboutState, MediaApi } from "../core/api.ts";
 import { DEFAULT_SETTINGS } from "../core/settings.ts";
 import type {
   AppSettings,
@@ -38,6 +38,9 @@ export const store = reactive({
   } as QueueState,
   settings: DEFAULT_SETTINGS as AppSettings,
   sources: { tmdb: "none", tvdb: "none", canSave: false } as SourcesState,
+  about: { version: "", logFile: null } as AboutState,
+  /** Something from start-up the person should know, such as settings that could not be read. */
+  startNotice: "",
   filter: "all" as Filter,
   selected: null as string | null,
   preview: null as PreviewState | null,
@@ -222,4 +225,6 @@ export async function init() {
   store.queue = loaded.queue;
   store.settings = loaded.settings;
   store.sources = loaded.sources;
+  store.about = loaded.about;
+  store.startNotice = loaded.notice ?? "";
 }

@@ -302,9 +302,16 @@ export const demoApi: MediaApi = {
   desktop: false,
   async load() {
     void addExamples();
-    return { queue: session.state(), settings, sources };
+    return {
+      queue: session.state(),
+      settings,
+      sources,
+      about: { version: __APP_VERSION__, logFile: null },
+    };
   },
   onQueue: (listener) => void listeners.push(listener),
+  // The preview keeps no log.
+  showLog: async () => {},
   addFiles: addExamples,
   addFolder: addExamples,
   addDropped: addExamples,
