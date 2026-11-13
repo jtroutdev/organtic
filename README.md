@@ -176,13 +176,18 @@ Closing the window or quitting while a batch is being applied or undone asks fir
   <img src="docs/screenshots/history.png" width="900" alt="History: a batch that stopped when the disk filled, with each change marked done, skipped, failed or not started">
 </p>
 
-**Settings** has three parts:
+**Settings** has four parts:
 
 | Part | Holds |
 | --- | --- |
 | **Naming** | The preset or your own templates, with a live example of each |
 | **Sources** | The TMDB token, the TVDB key, the language for titles, and the Kitsu options |
 | **Adding and renaming** | The defaults for organising, subtitles, NFO files, artwork and empty folders |
+| **About** | The version, and where the log file is, with a button that shows it in your file manager |
+
+Settings are saved whole or not at all, so a crash while saving cannot leave half a file. If saved settings cannot be read, the app starts with the defaults, says so in a banner, and keeps the old file beside the new one as `settings-unreadable.json`, so a custom template is not lost.
+
+The log file holds what a bug report needs and nothing more: when the app started, its version and system, and each error with its message and the paths it names, your home folder written as `~`. It never holds a token, a key, a list of your files or what a batch did. It is kept to two files of 256 KB. Read it before you send it to anyone. If the app cannot start, it says why and where the log is.
 
 ### Keyboard
 

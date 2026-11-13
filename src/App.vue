@@ -199,6 +199,12 @@ watch(
           >This browser preview uses example files and a canned catalogue. Open
           the desktop app to work with your own files.</NoticeBanner
         >
+        <NoticeBanner v-if="store.startNotice" tone="bad" role="alert"
+          >{{ store.startNotice
+          }}<template #action>
+            <ActionButton @click="store.startNotice = ''">Dismiss</ActionButton>
+          </template>
+        </NoticeBanner>
         <NoticeBanner v-if="store.error" tone="bad" role="alert"
           >{{ store.error
           }}<template #action>

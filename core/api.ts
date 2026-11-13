@@ -16,6 +16,13 @@ export type ReferenceKey = "tmdb" | "token" | "tvmaze" | "license" | "tvdb" | "t
  * the browser preview implements it with example data. Queue changes arrive through
  * `onQueue`, including ones that finish after the call that started them returns.
  */
+/** What Settings shows under About. */
+export type AboutState = {
+  version: string;
+  /** Where problems are written, with the home folder as `~`; null where there is no log. */
+  logFile: string | null;
+};
+
 export interface MediaApi {
   /** False in the browser preview, where nothing touches real files. */
   readonly desktop: boolean;
@@ -23,6 +30,9 @@ export interface MediaApi {
     queue: QueueState;
     settings: AppSettings;
     sources: SourcesState;
+    about: AboutState;
+    /** Something the person should know from start-up, such as saved settings that could not be read. */
+    notice?: string;
   }>;
   onQueue(listener: (queue: QueueState) => void): void;
   addFiles(): Promise<void>;
@@ -64,6 +74,8 @@ export interface MediaApi {
    */
   setTvdbKey(key: string, pin: string): Promise<{ sources: SourcesState; refused?: string }>;
   openReference(key: ReferenceKey): Promise<void>;
+  /** Shows the log file in the system's file manager. */
+  showLog(): Promise<void>;
   /** Opens a match's page on its source's site; any other address is refused. */
   openSourcePage(address: string): Promise<void>;
 }

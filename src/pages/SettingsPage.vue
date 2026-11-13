@@ -9,6 +9,7 @@ import {
 import type { MediaLike, NamingPreset } from "../../core/types.ts";
 import ActionButton from "../components/ActionButton.vue";
 import CheckOption from "../components/CheckOption.vue";
+import FilePath from "../components/FilePath.vue";
 import FormField from "../components/FormField.vue";
 import IssueText from "../components/IssueText.vue";
 import ListItem from "../components/ListItem.vue";
@@ -157,6 +158,7 @@ const sections = computed<[string, string, string, string][]>(() => [
     store.sources.tmdb === "none" ? "warn" : "ok",
   ],
   ["behaviour", "Adding and renaming", "Defaults for every batch", "ok"],
+  ["about", "About", `Version ${store.about.version}`, "ok"],
 ]);
 </script>
 
@@ -390,6 +392,25 @@ const sections = computed<[string, string, string, string][]>(() => [
         </FormField>
       </template>
 
+      <template v-else-if="store.section === 'about'">
+        <h2 class="title">About</h2>
+        <p>Organtic <span class="mono">{{ store.about.version }}</span></p>
+        <div class="section stack">
+          <h3 class="sub">Log file</h3>
+          <p class="muted">
+            Problems are written here to help with a bug report: when the app
+            started, its version and system, and each error with the paths it
+            names, your home folder shown as ~. It never holds a token, a key or
+            a list of your files. Read it before you send it to anyone.
+          </p>
+          <div v-if="store.about.logFile" class="row">
+            <FilePath class="grow" :path="store.about.logFile" />
+            <ActionButton :disabled="store.busy" @click="run(api.showLog)">Show in folder</ActionButton>
+          </div>
+          <p v-else class="muted">The browser preview keeps no log.</p>
+        </div>
+      </template>
+
       <template v-else>
         <h2 class="title">Adding and renaming</h2>
         <CheckOption
@@ -417,4 +438,5 @@ const sections = computed<[string, string, string, string][]>(() => [
 .row>.input.grow{flex:1 1 220px;width:auto}
 .row>.input.grow.more{flex:2 1 200px}
 .row>.input.grow.less{flex:1 1 120px}
+.row>.path.grow{flex:1 1 0}
 </style>
