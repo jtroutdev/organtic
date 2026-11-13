@@ -35,7 +35,17 @@ test("portable filenames", () => {
   assert.equal(safeName("שלום"), "שלום");
   assert.throws(() => safeName("\u202e\u2066"), /empty/);
   assert.throws(() => safeName("..."));
+  // A leading dot would hide the file or folder; one inside the name stays.
+  assert.equal(safeName(".hack//SIGN"), "hack SIGN");
+  assert.equal(safeName(". . .Ever After"), "Ever After");
+  assert.equal(safeName("Mr. Robot"), "Mr. Robot");
+  assert.throws(() => safeName(". ."), /empty/);
   assert.throws(() => safeName("界".repeat(80)), /too long/);
+  // The folder and the file both lose the leading dot, so neither is hidden; one inside a name stays.
+  assert.deepEqual(
+    renderTemplate(PLEX_TEMPLATES.episode, { ...severance, title: ".hack//SIGN", year: 2002, episodeTitle: ".Role Play" }),
+    ["hack SIGN (2002)", "Season 01", "hack SIGN (2002) - S01E01 - .Role Play"],
+  );
 });
 
 test("Plex templates render folders and multi-episode ranges", () => {

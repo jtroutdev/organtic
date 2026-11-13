@@ -220,7 +220,7 @@ Settings offers a **Plex** preset (the default), a **Jellyfin** preset, and **Cu
 - The Plex preset names folders by title and year alone, which is what Plex matches on. Its optional `{tmdb-…}` folder tag is left out, because braces have to be written as `%7B` and `%7D` wherever a path becomes a URL. A custom template can add the tag back as `{{idsource}-{id}}`.
 - The Jellyfin preset keeps that player's `[tmdbid-…]` tag.
 - A show matched on TVmaze is tagged from the IDs TVmaze lists for it, and gets no tag if it lists neither.
-- Names are made safe for every platform: characters a filesystem refuses, Unicode direction overrides that can make a file display under another name, and the device names Windows reserves are all dealt with.
+- Names are made safe for every platform: characters a filesystem refuses, Unicode direction overrides that can make a file display under another name, and the device names Windows reserves are all dealt with. A dot at the start of a name is dropped, since it would hide the folder or file on Linux and macOS, and from Plex and Jellyfin: `.hack//SIGN` becomes `hack SIGN (2002)`.
 
 ### What is read from a file name
 

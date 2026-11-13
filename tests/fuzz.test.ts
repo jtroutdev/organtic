@@ -130,7 +130,7 @@ function checkSafe(name: string, from: string) {
   assert.ok(name.length > 0, where);
   assert.doesNotMatch(name, UNSAFE, where);
   assert.doesNotMatch(name, /[\u202a-\u202e\u2066-\u2069]/, where);
-  assert.doesNotMatch(name, /[. ]$|^ /, where);
+  assert.doesNotMatch(name, /[. ]$|^[. ]/, where);
   assert.doesNotMatch(name, RESERVED, where);
   assert.notEqual(name, "..", where);
   assert.equal(name, name.normalize("NFC"), where);

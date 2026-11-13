@@ -52,9 +52,10 @@ export function safeName(value: unknown): string {
     .replace(/[<>:"/\\|?*\x00-\x1f\x7f]/g, " ")
     .replace(/\s+/g, " ")
     .trim()
-    .replace(/[. ]+$/, "");
-  if (!name || name === "." || name === "..")
-    throw new Error("The filename is empty.");
+    // A leading dot hides a file or folder on Linux and macOS, from media servers too;
+    // Windows drops trailing dots and spaces.
+    .replace(/^[. ]+|[. ]+$/g, "");
+  if (!name) throw new Error("The filename is empty.");
   // Windows device names, which it also reserves with the superscript digits ¹ ² ³.
   if (/^(con|prn|aux|nul|(?:com|lpt)[1-9¹²³])(?:\.|$)/i.test(name))
     name = `_${name}`;
