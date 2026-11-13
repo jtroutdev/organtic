@@ -916,14 +916,46 @@ export async function checkRoom(
   return problems;
 }
 
+/**
+ * A batch that stopped before its first change: no file was touched and nothing was
+ * journalled as started, so whatever the batch was made from can still be trusted.
+ */
+export class BatchNotStarted extends Error {
+  readonly started = false;
+}
+
 export async function applyPlan(
   plan: Plan,
   journalDir: string,
   io: FileOps = fs,
 ) {
+  try {
+    await checkPlan(plan, journalDir);
+  } catch (error) {
+    throw new BatchNotStarted(messageOf(error), { cause: error });
+  }
+  const journal = path.join(journalDir, `${plan.id}.jsonl`);
+  let created = false;
+  try {
+    await fs.writeFile(journal, "", { flag: "wx", mode: 0o600 });
+    created = true;
+    await append(journal, { type: "plan", plan });
+  } catch (error) {
+    // The record is written before the first change, so a batch without one never began.
+    // Only a record this call made is removed; one already there belongs to another batch.
+    if (created) await fs.rm(journal, { force: true }).catch(() => {});
+    throw new BatchNotStarted(
+      `The history record could not be written, so nothing was changed. ${messageOf(error)}`,
+      { cause: error },
+    );
+  }
+  return runPlan(plan, journal, io);
+}
+
+/** Rechecks the entire batch before touching the first file. */
+async function checkPlan(plan: Plan, journalDir: string) {
   if (plan.errors.length || !plan.operations.length)
     throw new Error("Resolve preview conflicts first.");
-  // Recheck the entire batch before touching the first file.
   for (const check of plan.sourceChecks || []) {
     if (!same(await exists(check.source), check.fingerprint))
       throw new Error("A source changed. Generate a fresh preview.");
@@ -941,9 +973,9 @@ export async function applyPlan(
   }
   const [blocked] = await checkRoom(plan, journalDir);
   if (blocked) throw new Error(blocked);
-  const journal = path.join(journalDir, `${plan.id}.jsonl`);
-  await fs.writeFile(journal, "", { flag: "wx", mode: 0o600 });
-  await append(journal, { type: "plan", plan });
+}
+
+async function runPlan(plan: Plan, journal: string, io: FileOps) {
   let completed = 0;
   const warnings: string[] = [];
   const renamed: { from: string; to: string }[] = [];

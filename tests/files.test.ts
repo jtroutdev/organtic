@@ -8,6 +8,7 @@ import {
   scanPaths,
   createPlan,
   applyPlan,
+  BatchNotStarted,
   undoBatch,
   onSameDrive,
   history,
@@ -78,7 +79,12 @@ test("revalidates source and target after preview", async (t) => {
   const f = await fixture(t);
   const plan = await planInPlace([{ file: f.file, media }]);
   await fs.writeFile(f.source, "changed");
-  await assert.rejects(applyPlan(plan, f.journals), /source changed/);
+  await assert.rejects(applyPlan(plan, f.journals), (error) => {
+    assert.ok(error instanceof BatchNotStarted);
+    assert.match(error.message, /source changed/);
+    return true;
+  });
+  assert.deepEqual(await fs.readdir(f.journals).catch(() => []), []);
   const fresh = await planInPlace([{ file: f.file, media }]);
   await fs.writeFile(fresh.operations[0]!.target, "do not overwrite");
   await assert.rejects(applyPlan(fresh, f.journals), /destination now exists/);
