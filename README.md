@@ -102,8 +102,16 @@ shasum -a 256 --check --ignore-missing SHA256SUMS.txt   # macOS
 
 On Windows, compare the line for your file with the output of `Get-FileHash .\Organtic-0.2.0-win-x64.exe -Algorithm SHA256` in PowerShell.
 
+Each installer also has a build provenance attestation: a signed record, kept by GitHub, that it was built by this repository's release workflow and from which commit. With the [GitHub CLI](https://cli.github.com/), check a download with:
+
+```sh
+gh attestation verify Organtic-0.2.0-win-x64.exe --repo jtroutdev/organtic
+```
+
+It should say the verification succeeded and name the release workflow and the commit.
+
 > [!NOTE]
-> A matching checksum shows the file arrived as it was built. It does not show who built it; only signing can.
+> A matching checksum shows the file arrived as it was built. The attestation shows it was built here, by the release workflow, from the source at that commit. Neither is code signing, so the operating system will still warn that the app is from an unidentified developer.
 
 ## The workflow
 
