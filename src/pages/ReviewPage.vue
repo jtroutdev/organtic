@@ -11,8 +11,8 @@ import EpisodeCode from "../components/EpisodeCode.vue";
 import FilePath from "../components/FilePath.vue";
 import GroupHeading from "../components/GroupHeading.vue";
 import FileRow from "../components/FileRow.vue";
+import GroupRow from "../components/GroupRow.vue";
 import IssueText from "../components/IssueText.vue";
-import ListItem from "../components/ListItem.vue";
 import MatchCard from "../components/MatchCard.vue";
 import PosterImage from "../components/PosterImage.vue";
 import ProgressBar from "../components/ProgressBar.vue";
@@ -71,7 +71,6 @@ const readyFiles = computed(() =>
 const waiting = computed(unconfirmed);
 // A file left out of the batch is no longer a problem to solve.
 const isProblem = (file: QueueFile) => !!file.issue && !file.excluded;
-const problemsIn = (item: { files: QueueFile[] }) => item.files.filter(isProblem).length;
 const filters: [Filter, string][] = [
   ["all", "All"],
   ["todo", "Needs you"],
@@ -179,9 +178,8 @@ async function confirmAll() {
 // Ticked groups are merged or removed together. Only those in the current view count, so
 // nothing out of sight is changed.
 const tickedKeys = ref<string[]>([]);
-const ticked = computed(() =>
-  groups.value.filter((item) => tickedKeys.value.includes(item.key)),
-);
+const tickedSet = computed(() => new Set(tickedKeys.value));
+const ticked = computed(() => groups.value.filter((item) => tickedSet.value.has(item.key)));
 // Where a shift-click range starts: the last group ticked or unticked.
 let anchor: string | null = null;
 function tick(key: string, on: boolean, range: boolean) {
@@ -582,34 +580,15 @@ async function search() {
           </details>
         </template>
         <template #side>
-          <div v-for="item in groups" :key="item.key" class="tickrow">
-            <label class="pick">
-              <TickBox
-                :aria-label="`Select ${nameOf(item)}`"
-                :checked="tickedKeys.includes(item.key)"
-                :tabindex="item.key === group?.key ? 0 : -1"
-                @click="
-                  tick(item.key, ($event.target as HTMLInputElement).checked, $event.shiftKey)
-                "
-              />
-            </label>
-            <ListItem
-              plain
-              :current="item.key === group?.key"
-              :tone="STATUS[item.status][0]"
-              :note="STATUS[item.status][1]"
-              :count="item.files.length"
-              unit="files"
-              :alert="problemsIn(item) ? plural(problemsIn(item), 'problem') : ''"
-              @click="open($event, item.key)"
-            >
-              <template v-if="item.chosen != null">
-                {{ item.candidates[item.chosen]?.title }}
-                <span class="muted">({{ item.candidates[item.chosen]?.year ?? "year unknown" }})</span>
-              </template>
-              <template v-else>{{ item.parsedTitle || "Unnamed" }}</template>
-            </ListItem>
-          </div>
+          <GroupRow
+            v-for="item in groups"
+            :key="item.key"
+            :item="item"
+            :current="item.key === group?.key"
+            :ticked="tickedSet.has(item.key)"
+            @tick="(on, range) => tick(item.key, on, range)"
+            @open="open($event, item.key)"
+          />
         </template>
 
         <template v-if="group">
@@ -1015,12 +994,6 @@ async function search() {
 .views{display:flex;gap:var(--space-nested);align-items:center}
 .skipped>div{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--space-dense);padding:var(--space-nested) 0}
 .skipped>div+div{border-top:1px solid var(--color-outline-subtle)}
-/* A list item with a tick box beside it; the row takes over the item's rule, background and
-   selected edge. */
-.tickrow{display:grid;grid-template-columns:auto minmax(0,1fr);border-bottom:1px solid var(--color-outline-subtle)}
-.tickrow:hover{background-image:linear-gradient(var(--color-hover) 0 0)}
-.tickrow:has([aria-current="true"]){background-color:var(--color-accent-soft);outline:1px solid var(--color-accent);outline-offset:-1px}
-.tickrow .pick{padding-left:var(--space-surface)}
 /* The top of the selected group's pane, on the list's own colour and flush with the pane's edges. */
 .band{row-gap:var(--space-nested);padding-block:var(--space-surface);background:var(--color-surface-raised);border-bottom:1px solid var(--color-outline-subtle)}
 /* The group's actions keep to the right when the row wraps. */

@@ -6,7 +6,7 @@
 #     colors       dark values first, then the same names with a -light suffix
 #     typography   eleven levels, headline-lg to code-sm
 #     rounded      none, sm, md, full
-#     spacing      the base-4 scale, the four density steps, control heights
+#     spacing      the base-4 scale, the four density steps, control and list item heights
 #     components   resting values for each component and its states
 #   Prose (after the closing ---): the rules, one "## " heading each
 #     Overview            what the app is, hue 290, dark first, how tokens are named
@@ -143,6 +143,7 @@ spacing:
   dense: 4px
   control: 32px
   control-sm: 24px
+  list-item: 60px
 components:
   button:
     backgroundColor: "{colors.surface-raised}"
@@ -372,6 +373,8 @@ Page structure and scroll regions are built with CSS grid and `overflow`, as are
 Every screen is the same split: a list between 220 and 300px wide on the left, the selected item on the right. Content is never capped in width. Below 760px the split stacks.
 
 Every control is 32px tall: buttons, inputs, tabs, steps, segmented sets, list view tabs and option rows. A compact 24px button exists for use inside a table row and nowhere else.
+
+A list that can run to hundreds of rows, such as the groups on Matching, does not draw the rows out of sight: each row takes `content-visibility: auto`, with `list-item` (60px, a two-line list item) as its height until it has been drawn. Every row stays in the page, so keyboard movement, find and screen readers reach all of them. Each row is a component of its own, so a change to one row redraws only that row.
 
 Wizard steps (Add files, Review, Preview, Done) end in a footer, set off by the page gap and no rule: the destructive or back action on the left, a secondary action second from the right, the step's one primary action on the far right. History and Settings keep their actions at the top.
 

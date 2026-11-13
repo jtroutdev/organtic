@@ -172,7 +172,9 @@ async function start() {
       },
       applyPlan: (plan, signal) => applyPlan(plan, journalDir, undefined, signal),
     },
-    onChange: (queue) => mainWindow?.webContents.send("media:queue", queue),
+    onUpdate: (update) => mainWindow?.webContents.send("media:queue", update),
+    // About a frame: a burst of lookups reaches the window as one update.
+    defer: (flush) => setTimeout(flush, 16),
   });
 
   // Handlers receive renderer input; the session and core validate what they are given.

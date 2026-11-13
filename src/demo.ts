@@ -13,7 +13,7 @@ import type {
   MediaFile,
   Operation,
   Plan,
-  QueueState,
+  QueueUpdate,
   Selection,
   SourcesState,
 } from "../core/types.ts";
@@ -151,8 +151,26 @@ async function catalogue(url: URL): Promise<Response> {
   });
 }
 
+// `?shows=N` adds N generated shows of 12 episodes each, for checking by hand how the window
+// copes with a large library. The catalogue knows none of them.
+const WORDS = ["Amber", "Birch", "Cobalt", "Dune", "Ember", "Fable", "Garnet", "Harbor", "Ivory", "Juniper", "Kestrel", "Lantern", "Meadow", "Nimbus", "Orchid", "Pebble", "Quarry", "Raven", "Saffron", "Thistle", "Umber", "Velvet", "Willow", "Yarrow", "Zephyr", "Alder", "Bramble", "Cinder", "Drift", "Echo", "Fennel", "Glacier", "Hollow", "Indigo", "Jasper", "Kelp", "Lumen", "Marble", "Nettle", "Opal"];
+function generatedFiles() {
+  const shows = Math.min(
+    Number(new URLSearchParams(globalThis.location?.search).get("shows")) || 0,
+    WORDS.length * (WORDS.length - 1),
+  );
+  const files: string[] = [];
+  for (let index = 0; index < shows; index++) {
+    const first = WORDS[Math.floor(index / (WORDS.length - 1))]!;
+    const second = WORDS.filter((word) => word !== first)[index % (WORDS.length - 1)]!;
+    for (let episode = 1; episode <= 12; episode++)
+      files.push(`Generated/${first} ${second}/Season 01/${first}.${second}.S01E${String(episode).padStart(2, "0")}.1080p.mkv`);
+  }
+  return files;
+}
+
 function exampleFiles(): MediaFile[] {
-  return EXAMPLE_FILES.map((relative, index) => {
+  return [...EXAMPLE_FILES, ...generatedFiles()].map((relative, index) => {
     const path = `${ROOT}/${relative}`;
     return {
       id: `example-${index}`,
@@ -279,7 +297,7 @@ const batches: BatchSummary[] = [
     ],
   },
 ];
-const listeners: ((queue: QueueState) => void)[] = [];
+const listeners: ((update: QueueUpdate) => void)[] = [];
 const providers = new Providers({ fetcher: catalogue });
 providers.setToken("example");
 let settings = DEFAULT_SETTINGS;
@@ -288,7 +306,9 @@ const session = new Session({
   providers,
   planner,
   settings,
-  onChange: (queue) => listeners.forEach((listener) => listener(queue)),
+  onUpdate: (update) => listeners.forEach((listener) => listener(update)),
+  // As the desktop app does: a burst of changes arrives as one update.
+  defer: (flush) => setTimeout(flush, 16),
 });
 const addExamples = () => session.addFiles({
     files: exampleFiles(),

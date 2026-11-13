@@ -1,5 +1,6 @@
 import { reactive } from "vue";
 import type { AboutState, MediaApi } from "../core/api.ts";
+import { applyQueueUpdate } from "../core/queueUpdate.ts";
 import { DEFAULT_SETTINGS } from "../core/settings.ts";
 import type {
   AppSettings,
@@ -212,11 +213,11 @@ export async function apply() {
 }
 
 export async function init() {
-  api.onQueue((queue) => {
-    if (queue.lookups && !store.queue.lookups)
-      announce(`Looking up ${plural(queue.lookups.total, "group")}.`);
-    if (!queue.lookups && store.queue.lookups) announce("Lookups finished.");
-    store.queue = queue;
+  api.onQueue((update) => {
+    if (update.lookups && !store.queue.lookups)
+      announce(`Looking up ${plural(update.lookups.total, "group")}.`);
+    if (!update.lookups && store.queue.lookups) announce("Lookups finished.");
+    applyQueueUpdate(store.queue, update);
     // What is on screen in Preview must always match the queue it was built from.
     if (store.page === "preview" && !store.applied) void loadPreview();
   });

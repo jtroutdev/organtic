@@ -5,6 +5,7 @@ import type {
   EpisodeNumbers,
   PreviewState,
   QueueState,
+  QueueUpdate,
   SearchRequest,
   SourcesState,
 } from "./types.ts";
@@ -14,7 +15,8 @@ export type ReferenceKey = "tmdb" | "token" | "tvmaze" | "license" | "tvdb" | "t
 /**
  * Everything the interface can ask of the app. The desktop build implements it over IPC;
  * the browser preview implements it with example data. Queue changes arrive through
- * `onQueue`, including ones that finish after the call that started them returns.
+ * `onQueue` as updates to apply to the queue `load` gave, with `applyQueueUpdate`, including
+ * ones that finish after the call that started them returns.
  */
 /** What Settings shows under About. */
 export type AboutState = {
@@ -34,7 +36,7 @@ export interface MediaApi {
     /** Something the person should know from start-up, such as saved settings that could not be read. */
     notice?: string;
   }>;
-  onQueue(listener: (queue: QueueState) => void): void;
+  onQueue(listener: (update: QueueUpdate) => void): void;
   addFiles(): Promise<void>;
   addFolder(): Promise<void>;
   /** Files or folders dropped onto the window. */

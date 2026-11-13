@@ -140,10 +140,12 @@ async function run(library: Library, base: string) {
         },
         applyPlan: (plan, signal) => applyPlan(plan, journalDir, undefined, signal),
       },
-      onChange: (queue) => {
+      onUpdate: (update) => {
         pushes++;
-        bytes += JSON.stringify(queue).length;
+        bytes += JSON.stringify(update).length;
       },
+      // As the desktop app waits before sending.
+      defer: (flush) => setTimeout(flush, 16),
     });
 
     const delay = monitorEventLoopDelay({ resolution: 10 });
@@ -158,6 +160,8 @@ async function run(library: Library, base: string) {
     };
 
     const imported = await phase(async () => session.addFiles(await scanPaths([media])));
+    // Let the last update of the run go out before counting.
+    await new Promise((resolve) => setTimeout(resolve, 50));
     const queue = session.state();
     const suggested = queue.groups.filter((group) => group.status === "suggested").length;
     const lookupPushes = pushes;
@@ -215,6 +219,15 @@ for (const library of libraries) {
   console.log(
     `| ${library.files.toLocaleString("en")} files, ${library.shows} shows${library.flat ? ", one folder" : ""} | ${result.groups} | ${result.pushes} | ${megabytes(result.bytes)} | ${seconds(imported.elapsed)} | ${seconds(preview.elapsed)} | ${seconds(applied.elapsed)} | ${seconds(listed.elapsed)} | ${seconds(undone.elapsed)} | ${Math.round(blocked)} ms |`,
   );
+  const worst = Object.entries(result.phases).sort((a, b) => b[1].blocked - a[1].blocked)[0]!;
+  const names: Record<string, string> = {
+    imported: "import and lookups",
+    preview: "preview",
+    applied: "apply",
+    listed: "History",
+    undone: "undo",
+  };
+  console.log(`  Held up longest during ${names[worst[0]]}.`);
   if (result.suggested !== library.shows)
     console.warn(`  ${result.suggested} of ${library.shows} shows were suggested; the stand-in catalogue needs a look.`);
   for (const [shape, count] of result.unknown)
