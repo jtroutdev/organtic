@@ -77,7 +77,7 @@ npm start
 
 `npm start` builds and launches the desktop app. Linux requires a desktop session and Electron's system libraries.
 
-`npm run dev` serves a browser preview at [http://127.0.0.1:47831](http://127.0.0.1:47831), marked **Example mode**. It runs the real queue logic over clearly labeled example files and a canned catalogue; it cannot access or rename your files or contact a metadata source. The server stops with an error if port 47831 is occupied instead of silently choosing another port. To override it, run `npm run dev -- --port 47832`.
+`npm run dev` serves a browser preview at [http://127.0.0.1:47831](http://127.0.0.1:47831), marked **Example mode**. It runs the real queue logic over clearly labeled example files and a canned catalogue; it cannot access or rename your files or contact a metadata source. The server stops with an error if port 47831 is occupied instead of silently choosing another port. To override it, run `npm run dev -- --port 47832`. Adding `?shows=1400` to the address adds that many generated shows of 12 episodes each, none of which the catalogue knows, to see how the window copes with a large library.
 
 | Command | What it does |
 | --- | --- |

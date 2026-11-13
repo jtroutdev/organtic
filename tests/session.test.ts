@@ -5,10 +5,11 @@ import * as fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { applyPlan, createPlan, scanPaths } from "../core/files.ts";
+import { applyQueueUpdate } from "../core/queueUpdate.ts";
 import { Providers } from "../core/providers.ts";
 import { Session } from "../core/session.ts";
 import { DEFAULT_SETTINGS, mergeSettings } from "../core/settings.ts";
-import type { AppSettings, QueueState } from "../core/types.ts";
+import type { AppSettings, QueueState, QueueUpdate } from "../core/types.ts";
 
 // A tiny TMDB: two shows, two films sharing a title, and one film.
 // The other sources answer, with nothing.
@@ -55,13 +56,21 @@ async function setup(t: TestContext, names: string[], settings: Partial<AppSetti
   }
   const providers = new Providers({ fetcher: tmdb });
   providers.setToken("test");
-  const states: QueueState[] = [];
+  const states: QueueUpdate[] = [];
+  // What the window holds: the queue as first loaded, with every update applied to it.
+  const window: QueueState = { groups: [], skipped: [], unread: [], lookups: null };
   const session = new Session({
     providers,
     settings: mergeSettings(settings),
     planner: { createPlan, applyPlan: (plan) => applyPlan(plan, path.join(dir, ".journals")) },
-    onChange: (state) => states.push(state),
+    onUpdate: (update) => {
+      states.push(update);
+      applyQueueUpdate(window, update);
+    },
+    defer: (flush) => flush(),
   });
+  // Whatever a test did, the window ends up showing exactly the session's queue.
+  t.after(() => assert.deepEqual(window, session.state(), "the window's queue drifted from the session's"));
   await session.addFiles(await scanPaths([dir]));
   const group = (title: string) => session.state().groups.find((g) => g.parsedTitle === title)!;
   return { dir, session, states, group };
@@ -430,7 +439,7 @@ test("lookups report progress and can be cancelled", async (t) => {
   let open = () => {};
   let gate = new Promise<void>((resolve) => (open = resolve));
   const aborted: boolean[] = [];
-  const states: QueueState[] = [];
+  const states: QueueUpdate[] = [];
   const make = () => {
     const providers = new Providers({
       fetcher: async (url, init) => {
@@ -445,7 +454,8 @@ test("lookups report progress and can be cancelled", async (t) => {
       providers,
       settings: DEFAULT_SETTINGS,
       planner: { createPlan, applyPlan: (plan) => applyPlan(plan, path.join(dir, ".journals")) },
-      onChange: (state) => states.push(state),
+      onUpdate: (update) => states.push(update),
+    defer: (flush) => flush(),
     });
   };
   let session = make();
@@ -750,4 +760,63 @@ test("files with no usable number are matched by the episode name in the filenam
     ],
   );
   assert.match(found.reason, /1 file was matched by episode name, having no number\./);
+});
+
+test("updates carry only what changed, and a burst of changes goes out as one", async (t) => {
+  const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "organtic-")));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  for (const name of ["Severance.S01E01.mkv", "Arrival.2016.mkv", "Solaris.mkv", "Arrival.2016-sample.mkv"])
+    await fs.writeFile(path.join(dir, name), name);
+  const providers = new Providers({ fetcher: tmdb });
+  providers.setToken("test");
+  const updates: QueueUpdate[] = [];
+  const window: QueueState = { groups: [], skipped: [], unread: [], lookups: null };
+  const session = new Session({
+    providers,
+    settings: DEFAULT_SETTINGS,
+    planner: { createPlan, applyPlan: (plan) => applyPlan(plan, path.join(dir, ".journals")) },
+    onUpdate: (update) => {
+      updates.push(update);
+      applyQueueUpdate(window, update);
+    },
+  });
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+  const keyOf = (title: string) => session.state().groups.find((g) => g.parsedTitle === title)!.key;
+
+  await session.addFiles(await scanPaths([dir]));
+  await settle();
+  assert.deepEqual(window, session.state());
+  // The first update gave the order and the lists; later ones leave them out.
+  assert.deepEqual(updates[0]!.order, session.state().groups.map((g) => g.key));
+  assert.deepEqual(updates[0]!.skipped?.map((file) => file.source), ["Arrival.2016-sample.mkv"]);
+
+  // Two changes in one turn: one update, naming only the two groups.
+  updates.length = 0;
+  const kept = window.groups.find((g) => g.parsedTitle === "Solaris");
+  session.confirm(keyOf("Severance"));
+  session.confirm(keyOf("Arrival"));
+  await settle();
+  assert.equal(updates.length, 1);
+  assert.deepEqual(updates[0]!.groups.map((g) => g.parsedTitle).sort(), ["Arrival", "Severance"]);
+  assert.equal(updates[0]!.order, undefined);
+  assert.equal(updates[0]!.skipped, undefined);
+  // The untouched group is the same object the window already held.
+  assert.equal(window.groups.find((g) => g.parsedTitle === "Solaris"), kept);
+  assert.deepEqual(window, session.state());
+
+  // Removing a group sends the new order and nothing else to describe.
+  updates.length = 0;
+  session.remove(keyOf("Solaris"));
+  await settle();
+  assert.deepEqual(updates, [{ groups: [], order: session.state().groups.map((g) => g.key), lookups: null }]);
+
+  // A settings change describes every group again, with the new template.
+  session.updateSettings(mergeSettings({ preset: "jellyfin" }));
+  await settle();
+  assert.deepEqual(window, session.state());
+  assert.equal(updates.at(-1)!.groups.length, 2);
+
+  session.clear();
+  await settle();
+  assert.deepEqual(window, { groups: [], skipped: [], unread: [], lookups: null });
 });

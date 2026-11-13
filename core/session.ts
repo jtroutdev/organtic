@@ -19,6 +19,7 @@ import type {
   QueueFile,
   QueueGroup,
   QueueState,
+  QueueUpdate,
   ResolveResult,
   ScanResult,
   SearchRequest,
@@ -106,7 +107,7 @@ const extensionOf = (value: string) =>
 /**
  * The queue behind the interface: imported files grouped by show or film, the match
  * suggested or chosen for each group, and the plan built from the confirmed ones.
- * Every change is reported through `onChange`.
+ * Changes are reported through `onUpdate` as what changed, a run of them at a time.
  */
 export class Session {
   private files = new Map<string, MediaFile>();
@@ -121,38 +122,68 @@ export class Session {
   private providers: Providers;
   private planner: Planner;
   private settings: AppSettings;
-  private onChange: (state: QueueState) => void;
+  private onUpdate: (update: QueueUpdate) => void;
+  private defer: (flush: () => void) => void;
+  /** Each group's description, kept until the group or the settings change. */
+  private described = new Map<string, QueueGroup>();
+  /** Groups changed since the last update. */
+  private dirty = new Set<string>();
+  /** The skipped and unread lists may have changed since the last update. */
+  private listsChanged = true;
+  /** The group order the last update gave. */
+  private sentOrder: string[] = [];
+  private flushPending = false;
 
   constructor(options: {
     providers: Providers;
     planner: Planner;
     settings: AppSettings;
-    onChange?: (state: QueueState) => void;
+    onUpdate?: (update: QueueUpdate) => void;
+    /**
+     * When the update for a run of changes is sent. Changes made before it runs go out
+     * together. Defaults to the next microtask; the desktop app waits about a frame.
+     */
+    defer?: (flush: () => void) => void;
   }) {
     this.providers = options.providers;
     this.planner = options.planner;
     this.settings = options.settings;
-    this.onChange = options.onChange ?? (() => {});
+    this.onUpdate = options.onUpdate ?? (() => {});
+    this.defer = options.defer ?? queueMicrotask;
   }
 
   // ---- Reading ----
 
   state(): QueueState {
-    const all = [...this.files.values()];
     return {
-      groups: [...this.groups.values()].map((group) => this.describe(group)),
-      skipped: all
-        .filter((file) => file.parsed.skip)
-        .map((file) => ({
-          id: file.id,
-          source: relativeTo(file.path, file.root),
-          reason: file.parsed.skip!,
-        })),
+      groups: [...this.groups.values()].map((group) => this.cached(group)),
+      skipped: this.skipped(),
       unread: this.unread,
-      lookups: this.run.total
-        ? { done: this.run.done, total: this.run.total }
-        : null,
+      lookups: this.lookups(),
     };
+  }
+
+  private skipped(): QueueState["skipped"] {
+    return [...this.files.values()]
+      .filter((file) => file.parsed.skip)
+      .map((file) => ({
+        id: file.id,
+        source: relativeTo(file.path, file.root),
+        reason: file.parsed.skip!,
+      }));
+  }
+
+  private lookups(): QueueState["lookups"] {
+    return this.run.total ? { done: this.run.done, total: this.run.total } : null;
+  }
+
+  private cached(group: Group): QueueGroup {
+    let described = this.described.get(group.key);
+    if (!described || this.dirty.has(group.key)) {
+      described = this.describe(group);
+      this.described.set(group.key, described);
+    }
+    return described;
   }
 
   /** Where a group's folders are created, as shown to the user. */
@@ -252,9 +283,57 @@ export class Session {
     };
   }
 
-  private changed() {
+  /**
+   * Records that these groups changed, drops the previewed plan, and sends an update soon.
+   * Every change to a group's fields, files or results must name the group here, or the
+   * window keeps showing its old description.
+   */
+  private changed(...groups: Group[]) {
     this.plan = null;
-    this.onChange(this.state());
+    for (const group of groups) this.dirty.add(group.key);
+    this.send();
+  }
+
+  /** For changes that reach every group: the settings, the files' paths, or clearing. */
+  private changedAll() {
+    this.described.clear();
+    this.listsChanged = true;
+    this.changed(...this.groups.values());
+  }
+
+  /** Sends an update soon; changes made before then go in the same one. */
+  private send() {
+    if (this.flushPending) return;
+    this.flushPending = true;
+    this.defer(() => this.flush());
+  }
+
+  private flush() {
+    this.flushPending = false;
+    const groups: QueueGroup[] = [];
+    for (const key of this.dirty) {
+      const group = this.groups.get(key);
+      if (group) groups.push(this.cached(group));
+      else this.described.delete(key);
+    }
+    this.dirty.clear();
+    const update: QueueUpdate = { groups, lookups: this.lookups() };
+    const order = [...this.groups.keys()];
+    if (
+      order.length !== this.sentOrder.length ||
+      order.some((key, index) => key !== this.sentOrder[index])
+    ) {
+      update.order = order;
+      this.sentOrder = order;
+      for (const key of this.described.keys())
+        if (!this.groups.has(key)) this.described.delete(key);
+    }
+    if (this.listsChanged) {
+      update.skipped = this.skipped();
+      update.unread = this.unread;
+      this.listsChanged = false;
+    }
+    this.onUpdate(update);
   }
 
   // ---- Adding and removing ----
@@ -268,6 +347,7 @@ export class Session {
       if (!this.settings.skipExtras) file.parsed.skip = null;
       this.files.set(file.id, file);
     }
+    this.listsChanged = true;
     await this.place(fresh);
   }
 
@@ -301,7 +381,8 @@ export class Session {
       }
       touched.push(group);
     }
-    this.changed();
+    this.listsChanged = true;
+    this.changed(...touched);
     await this.schedule(
       touched.filter(
         (group) => group.chosen !== null || this.settings.autoMatch,
@@ -327,7 +408,7 @@ export class Session {
         this.waiting.push({ group, run, finish }),
       );
     });
-    this.changed();
+    this.changed(...groups);
     this.pump();
     return Promise.all(jobs).then(() => {});
   }
@@ -346,7 +427,7 @@ export class Session {
           this.active.delete(job);
           if (run === this.run) {
             if (++run.done >= run.total) this.run = newRun();
-            this.onChange(this.state());
+            this.send();
           }
           job.finish();
           this.pump();
@@ -364,7 +445,8 @@ export class Session {
     this.run.cancelled = true;
     this.run = newRun();
     const queued = this.waiting.splice(0);
-    for (const { group } of [...queued, ...this.active]) {
+    const hit = [...queued, ...this.active].map((job) => job.group);
+    for (const group of hit) {
       // Discards whatever an in-flight request for this group returns.
       group.lookup++;
       // Only a group that already had names worked out keeps its match.
@@ -376,7 +458,7 @@ export class Session {
     }
     this.providers.cancel();
     queued.forEach((job) => job.finish());
-    this.changed();
+    this.changed(...hit);
   }
 
   remove(key: string) {
@@ -395,7 +477,7 @@ export class Session {
     this.groups.clear();
     this.excluded.clear();
     this.unread = [];
-    this.changed();
+    this.changedAll();
   }
 
   /** Moves a file that was set aside as a sample or extra into the queue. */
@@ -411,7 +493,9 @@ export class Session {
     if (!this.files.has(fileId)) return;
     if (excluded) this.excluded.add(fileId);
     else this.excluded.delete(fileId);
-    this.changed();
+    const owner = [...this.groups.values()].find((group) => group.fileIds.includes(fileId));
+    if (owner) this.changed(owner);
+    else this.changed();
   }
 
   /**
@@ -465,7 +549,7 @@ export class Session {
       target.fileIds.push(...leaving);
       if (!from.fileIds.length) this.groups.delete(from.key);
     }
-    this.changed();
+    this.changed(...sources, target);
     // Refresh both sides: the moved files need the target's match, and each source's
     // summary no longer counts them.
     for (const from of sources)
@@ -509,7 +593,7 @@ export class Session {
       airDate: null,
       episodeTitle: null,
     });
-    if (group.chosen === null) this.changed();
+    if (group.chosen === null) this.changed(group);
     else await this.resolve(group);
   }
 
@@ -518,12 +602,12 @@ export class Session {
     const group = this.group(key);
     if (folder === null) delete group.destination;
     else group.destination = folder;
-    this.changed();
+    this.changed(group);
   }
 
   updateSettings(settings: AppSettings) {
     this.settings = settings;
-    this.changed();
+    this.changedAll();
   }
 
   // ---- Matching ----
@@ -561,7 +645,7 @@ export class Session {
     const lookup = ++group.lookup;
     group.status = "matching";
     group.reason = "Looking up matches.";
-    this.changed();
+    this.changed(group);
     try {
       const input = {
         kind: group.kind,
@@ -655,7 +739,7 @@ export class Session {
       group.candidates = [];
       this.unmatched(group, messageOf(error));
     }
-    this.changed();
+    this.changed(group);
   }
 
   /** Fetches what the chosen match needs for every file in the group, e.g. episode titles. */
@@ -766,7 +850,7 @@ export class Session {
     ]
       .filter(Boolean)
       .join(" ");
-    this.changed();
+    this.changed(group);
   }
 
   /** Looks up again every group that has no results, e.g. after a token was added. */
@@ -814,7 +898,7 @@ export class Session {
     const group = this.group(key);
     group.numbering = numbering === "tvdb" ? "tvdb" : "tmdb";
     if (group.chosen !== null) await this.resolve(group);
-    else this.changed();
+    else this.changed(group);
   }
 
   /**
@@ -847,13 +931,15 @@ export class Session {
     const group = this.group(key);
     if (group.chosen === null || group.status === "matching") return;
     group.status = "confirmed";
-    this.changed();
+    this.changed(group);
   }
 
   confirmSuggested() {
-    for (const group of this.groups.values())
-      if (group.status === "suggested") group.status = "confirmed";
-    this.changed();
+    const confirmed = [...this.groups.values()].filter(
+      (group) => group.status === "suggested",
+    );
+    for (const group of confirmed) group.status = "confirmed";
+    this.changed(...confirmed);
   }
 
   // ---- Preview and apply ----
@@ -1085,6 +1171,6 @@ export class Session {
       this.files.set(id, { ...file, path: moved(file.path), root: moved(file.root) });
     for (const group of this.groups.values())
       if (group.destination !== undefined) group.destination = moved(group.destination);
-    this.changed();
+    this.changedAll();
   }
 }

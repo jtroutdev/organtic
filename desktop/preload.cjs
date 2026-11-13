@@ -38,7 +38,7 @@ contextBridge.exposeInMainWorld("organtic", {
     ].map((method) => [method, invoke(method)]),
   ),
   onQueue: (listener) =>
-    ipcRenderer.on("media:queue", (_event, queue) => listener(queue)),
+    ipcRenderer.on("media:queue", (_event, update) => listener(update)),
   // Paths come only from real dropped files; the page cannot name a path itself.
   addDropped: (files) =>
     invoke("addPaths")(

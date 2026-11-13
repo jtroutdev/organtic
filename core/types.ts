@@ -349,6 +349,19 @@ export interface QueueState {
   lookups: { done: number; total: number } | null;
 }
 
+/**
+ * What changed in the queue since the last update. Groups are described in full; `order` is
+ * every group's key in queue order and comes only when a group was added or removed; the lists
+ * come only when they changed. Applied to a `QueueState` by `applyQueueUpdate`.
+ */
+export interface QueueUpdate {
+  groups: QueueGroup[];
+  order?: string[];
+  skipped?: QueueState["skipped"];
+  unread?: QueueState["unread"];
+  lookups: QueueState["lookups"];
+}
+
 export interface PreviewItem {
   fileId: string;
   kind: "video" | "subtitle" | "metadata" | "artwork";

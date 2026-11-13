@@ -28,7 +28,8 @@ The referenced [FileBot fork's license](https://github.com/mobeigi/filebot/blob/
 | `core/parse.ts`       | Filename and folder hints: titles, years, season/episode, multi-episode ranges, absolute numbers, extras      |
 | `core/group.ts`       | Grouping files by show or movie; ranking provider candidates and deciding when a match needs review           |
 | `core/animeMap.ts`    | Downloads, validates, and caches the community list that places Kitsu entries in TMDB and TVDB seasons          |
-| `core/session.ts`     | The queue: groups, lookups, confirmations, per-group preview, and what leaves the queue on apply              |
+| `core/session.ts`     | The queue: groups, lookups, confirmations, per-group preview, and what leaves the queue on apply; sends what changed |
+| `core/queueUpdate.ts` | Applies the session's updates to the queue the interface holds                                                |
 | `core/settings.ts`    | Defaults and validation of saved settings                                                                     |
 | `core/api.ts`         | The contract between the interface and the app, implemented over IPC and by the browser preview               |
 | `core/naming.ts`      | Naming templates (Plex preset), template validation, portable name formatting                                 |
@@ -57,7 +58,7 @@ flowchart LR
     J --> K[History and guarded undo]
 ```
 
-The interface never sends paths or metadata, only group keys, file IDs, and result indexes that the session resolves against what it holds; the one exception is dropped files, whose paths the preload script reads from the drop itself. Queue changes are pushed to the interface as they happen. An apply request can reference only the plan last previewed, and any change to the queue discards that plan. Apply and undo are serialized and a single app instance is enforced. Metadata searches do not mutate files.
+The interface never sends paths or metadata, only group keys, file IDs, and result indexes that the session resolves against what it holds; the one exception is dropped files, whose paths the preload script reads from the drop itself. Queue changes reach the interface as updates, not as the whole queue: the session keeps each group's description until the group or the settings change, and sends the groups that changed, the order of the groups when one was added or removed, the skipped and unread lists when they changed, and the lookup count. Changes made within about a frame (16 ms) go out as one update. The interface applies each to the queue it loaded with `applyQueueUpdate` (`core/queueUpdate.ts`), replacing only the changed groups, so the rest of the list is not redrawn. The browser preview sends the same updates. An apply request can reference only the plan last previewed, and any change to the queue discards that plan. Apply and undo are serialized and a single app instance is enforced. Metadata searches do not mutate files.
 
 ## Journal model
 
