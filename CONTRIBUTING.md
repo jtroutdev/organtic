@@ -39,7 +39,7 @@ npm test
 npm run build
 ```
 
-CI runs the same checks, and an unpacked package build, on Linux, Windows and macOS, for every pull request and every push to `main`. It also runs `npm audit --audit-level=high`, which fails on a high or critical advisory in any dependency. Dependabot opens weekly update pull requests for npm packages and workflow actions.
+CI runs the same checks, and an unpacked package build, on Linux, Windows and macOS, for every pull request and every push to `main`. It also runs `npm audit --audit-level=high`, which fails on a high or critical advisory in any dependency. Dependabot opens weekly update pull requests for npm packages and workflow actions. Workflow actions are pinned to a full commit SHA with the version in a comment beside it, since a tag can be moved to other code; a new or updated action is pinned the same way.
 
 ## What a change needs
 
