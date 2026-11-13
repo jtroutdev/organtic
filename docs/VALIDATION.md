@@ -4,6 +4,7 @@
 
 - [Verified locally (Linux)](#verified-locally-linux)
 - [Not yet verified](#not-yet-verified)
+- [Performance budget](#performance-budget)
 - [Dependency audit](#dependency-audit)
 
 ## Verified locally (Linux)
@@ -41,6 +42,32 @@
 - **Screen readers and real keyboard-only use.** The audit is automated and the key presses were synthetic; nobody has used the app with a screen reader or without a mouse. Windows high-contrast mode has styles but was not viewed. Narrow windows were not viewed.
 - **The release workflow.** The Linux AppImage was built locally and `scripts/checksums.sh` was run on it and on empty, badly named and altered folders. The workflow itself has not run: no Windows or macOS installer has been built, no release has been drafted, and no build provenance attestation has been made or checked with `gh attestation verify`. The commit SHAs the actions are pinned to were read from each action's release tag on 2026-11-12.
 - Signing/notarization, and Plex ingestion of the resulting library.
+
+## Performance budget
+
+`npm run bench` builds a library of generated TV episodes in a temporary folder, answers lookups from a stand-in for TMDB so only the app's own work is timed, and times import and lookups, preview, apply, History and undo. It also counts the queue updates sent to the window, how much they come to once serialised, and the longest the main process was held up. `--only small|large|flat` runs one standard library, `--files N --shows N [--flat]` any other, and `--dir` puts the temporary folder on a given disk: the system's temporary folder is often in memory, so use a real disk to compare with the budget.
+
+The budget, agreed on 12 November 2026, for a library at the import limit of **20,000 entries** (files and folders together; about 17,000 episodes in 1,400 show folders) on a local SSD:
+
+| Measure | Budget |
+| --- | --- |
+| Import and lookups, network stood in for | under 60 s |
+| Preview | under 5 s |
+| Apply and undo | 2 ms per operation or less |
+| Main process held up | never more than 100 ms |
+| The window | never unresponsive for more than 100 ms; checked by hand until a window test exists, since the benchmark cannot see it |
+
+The fixes for large libraries come before the public beta, and are measured against this.
+
+Results on 12 November 2026 (Linux, Node 24, NVMe btrfs), before any of those fixes. None meets the budget yet:
+
+| Library | Queue updates | Serialised | Import and lookups | Preview | Apply | History | Undo | Main process held up |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 500 files, 50 shows | 152 | 34 MB | 0.6 s | 0.2 s | 6.2 s | 0.0 s | 3.1 s | 11 ms |
+| 4,800 files, 400 shows | 1,202 | 2.5 GB | 36.9 s | 3.3 s | 55.0 s | 0.3 s | 28.0 s | 21 ms |
+| 3,000 files, 300 shows, one folder | 902 | 1.1 GB | 15.4 s | 8.9 s | 31.2 s | 0.1 s | 15.7 s | 19 ms |
+
+Import grows with the square of the library, because every change sends the whole queue; apply and undo cost about 11 and 6 ms per operation, mostly opening and flushing the history record; preview is slowest when every file is in one folder. The main process is never held up long: the cost is spread over many updates, and lands in the window, which replaces its whole list on each.
 
 ## Dependency audit
 

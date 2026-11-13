@@ -14,5 +14,5 @@
     "types": ["node"],
     "noEmit": true
   },
-  "include": ["core", "desktop", "tests"]
+  "include": ["core", "desktop", "tests", "scripts/*.ts"]
 }

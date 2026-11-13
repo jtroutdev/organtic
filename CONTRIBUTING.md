@@ -41,6 +41,8 @@ npm run build
 
 CI runs the same checks, and an unpacked package build, on Linux, Windows and macOS, for every pull request and every push to `main`. It also runs `npm audit --audit-level=high`, which fails on a high or critical advisory in any dependency. Dependabot opens weekly update pull requests for npm packages and workflow actions. Workflow actions are pinned to a full commit SHA with the version in a comment beside it, since a tag can be moved to other code; a new or updated action is pinned the same way.
 
+A change that touches importing, matching, planning, applying, History or undo is measured with `npm run bench -- --dir <a folder on a real disk>` and compared with the [performance budget](docs/VALIDATION.md#performance-budget); say in the pull request what it showed.
+
 ## What a change needs
 
 - **Tests for anything in `core/`.** They run on temporary files and never on personal media. A parsing fix comes with the file name that was read wrongly. A change to applying, undoing or the history record comes with a test that stops it part-way; `tests/recovery.test.ts` shows how.
