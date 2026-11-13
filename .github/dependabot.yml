@@ -1,0 +1,29 @@
+# Weekly version updates for npm packages and workflow actions. Security updates for
+# advisories are opened as soon as one is published, separately from these, once
+# Dependabot security updates are switched on in the repository's settings.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # Minor and patch releases land together in one pull request; a major release
+      # gets its own, since it can need code changes.
+      minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      # The app requires Node 24, so its types stay on 24.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      # vue-tsc needs TypeScript 6; this alias stays on 6 until vue-tsc supports 7.
+      - dependency-name: typescript6
+        update-types: ["version-update:semver-major"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
