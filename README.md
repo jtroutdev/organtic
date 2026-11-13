@@ -166,6 +166,8 @@ Preview opens once every group is confirmed or removed.
 
 **Apply** opens a native confirmation. Renamed files leave the queue; everything else stays. If a file changed or a destination appeared since the preview, the batch stops before renaming anything, the queue keeps every confirmed match, and Preview is built again for you to check and apply. The wizard ends on **Done**, which says how many operations completed and where.
 
+Closing the window or quitting while a batch is being applied or undone asks first: **Keep open**, **Close when finished**, or **Stop and close**. Stopping lets the file in hand finish, records where the batch stopped, and then closes; History shows the batch as stopped and can undo what was done. A stopped undo carries on from where it stopped when you undo the batch again.
+
 ### History and Settings
 
 **History** lists every batch and can undo it. For a batch that stopped, it shows what became of each change (done, failed, skipped or not started), with the reason it stopped given once at the top. A batch the app died in is told apart from one that failed.

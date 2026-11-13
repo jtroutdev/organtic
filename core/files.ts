@@ -924,11 +924,21 @@ export class BatchNotStarted extends Error {
   readonly started = false;
 }
 
+/** What a batch or an undo reports when it was asked to stop between operations. */
+export const STOPPED = "You stopped the batch.";
+
+/**
+ * Applies a plan. When `signal` is aborted, the operation in hand finishes and the batch
+ * stops before the next one, journalled as stopped like any other failure.
+ */
 export async function applyPlan(
   plan: Plan,
   journalDir: string,
   io: FileOps = fs,
+  signal?: AbortSignal,
 ) {
+  if (signal?.aborted)
+    throw new BatchNotStarted(`${STOPPED} Nothing was changed.`);
   try {
     await checkPlan(plan, journalDir);
   } catch (error) {
@@ -949,7 +959,7 @@ export async function applyPlan(
       { cause: error },
     );
   }
-  return runPlan(plan, journal, io);
+  return runPlan(plan, journal, io, signal);
 }
 
 /** Rechecks the entire batch before touching the first file. */
@@ -975,12 +985,18 @@ async function checkPlan(plan: Plan, journalDir: string) {
   if (blocked) throw new Error(blocked);
 }
 
-async function runPlan(plan: Plan, journal: string, io: FileOps) {
+async function runPlan(
+  plan: Plan,
+  journal: string,
+  io: FileOps,
+  signal?: AbortSignal,
+) {
   let completed = 0;
   const warnings: string[] = [];
   const renamed: { from: string; to: string }[] = [];
   try {
     for (const [index, op] of plan.operations.entries()) {
+      if (signal?.aborted) throw new Error(STOPPED);
       await append(journal, { type: "intent", index });
       let size: number | undefined;
       if (op.type === "move") await noReplaceMove(op, io);
@@ -1142,10 +1158,15 @@ export async function history(journalDir: string): Promise<BatchSummary[]> {
   return result.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
+/**
+ * Puts a batch back. When `signal` is aborted, the operation in hand is put back and undo stops
+ * before the next one; each step is already journalled, so the next undo carries on from there.
+ */
 export async function undoBatch(
   id: string,
   journalDir: string,
   io: FileOps = fs,
+  signal?: AbortSignal,
 ) {
   if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error("Invalid batch.");
   const file = path.join(journalDir, `${id}.jsonl`);
@@ -1157,6 +1178,13 @@ export async function undoBatch(
   const renamed: { from: string; to: string }[] = [];
   for (const [index, op] of [...plan.operations.entries()].reverse()) {
     if (!started.has(index) || reversed.has(index)) continue;
+    if (signal?.aborted)
+      throw Object.assign(
+        new Error(
+          "You stopped the undo part-way. Undo the batch again from History to put back the rest.",
+        ),
+        { renamed },
+      );
     if (op.type === "mkdir") {
       try {
         await fs.rmdir(op.target);

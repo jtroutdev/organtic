@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { scanPaths, createPlan, applyPlan, undoBatch, history } from "../core/files.ts";
+import { scanPaths, createPlan, applyPlan, undoBatch, history, BatchNotStarted, STOPPED } from "../core/files.ts";
 import type { FileOps } from "../core/files.ts";
 import type { Media, Plan } from "../core/types.ts";
 
@@ -143,6 +143,78 @@ for (const links of [true, false]) {
     }
   });
 }
+
+/** File calls that ask to stop during the chosen call, which still goes ahead. */
+function stoppingOn(call: number, controller: AbortController): FileOps {
+  let calls = 0;
+  const hit = () => {
+    if (calls++ === call) controller.abort();
+  };
+  return {
+    link: async (source, target) => (hit(), fs.link(source, target)),
+    rename: async (source, target) => (hit(), fs.rename(source, target)),
+  };
+}
+
+test("a batch stopped during any move finishes that move, records the stop and is undone exactly", async (t) => {
+  const count = moves((await library(t)).plan);
+  for (let call = 0; call < count; call++) {
+    const lib = await library(t);
+    const before = await snapshot(lib.dir);
+    const controller = new AbortController();
+    await assert.rejects(
+      applyPlan(lib.plan, lib.journals, stoppingOn(call, controller), controller.signal),
+      (error: Error) => !(error instanceof BatchNotStarted) && /^Stopped after \d+ operations: You stopped the batch\./.test(error.message),
+      `move ${call}`,
+    );
+    const lines = await linesOf(lib.journal);
+    assert.deepEqual(JSON.parse(lines.at(-1)!), { type: "failed", message: STOPPED }, `move ${call}`);
+    // The move in hand was finished: its last record before the stop says it was done.
+    assert.match(lines.at(-2)!, /"type":"done"/, `move ${call}`);
+    const [summary] = await history(lib.journals);
+    assert.equal(summary?.status, "interrupted", `move ${call}`);
+    assert.equal(summary?.stopped, STOPPED, `move ${call}`);
+    assert.ok(summary?.operations.some((op) => op.outcome === "pending"), `move ${call} left nothing unstarted`);
+    assert.ok(!summary?.operations.some((op) => op.outcome === "failed"), `move ${call}`);
+    await undoBatch(lib.plan.id, lib.journals);
+    assert.deepEqual(await snapshot(lib.dir), before, `move ${call}`);
+    assert.equal(await statusOf(lib.journals), "undone", `move ${call}`);
+  }
+});
+
+test("a batch asked to stop before it begins changes nothing and leaves no record", async (t) => {
+  const lib = await library(t);
+  const before = await snapshot(lib.dir);
+  const controller = new AbortController();
+  controller.abort();
+  await assert.rejects(
+    applyPlan(lib.plan, lib.journals, fs, controller.signal),
+    (error: Error) => error instanceof BatchNotStarted && /You stopped the batch\. Nothing was changed\./.test(error.message),
+  );
+  assert.deepEqual(await snapshot(lib.dir), before);
+  await assert.rejects(fs.access(lib.journal));
+});
+
+test("an undo stopped during any move finishes that move and carries on from there next time", async (t) => {
+  const count = moves((await library(t)).plan);
+  for (let call = 0; call < count - 1; call++) {
+    const lib = await library(t);
+    const before = await snapshot(lib.dir);
+    await applyPlan(lib.plan, lib.journals);
+    const controller = new AbortController();
+    await assert.rejects(
+      undoBatch(lib.plan.id, lib.journals, stoppingOn(call, controller), controller.signal),
+      /You stopped the undo part-way/,
+      `move ${call}`,
+    );
+    const lines = await linesOf(lib.journal);
+    assert.match(lines.at(-1)!, /"undo-done"/, `move ${call}`);
+    assert.notDeepEqual(await snapshot(lib.dir), before, `move ${call} put everything back`);
+    await undoBatch(lib.plan.id, lib.journals);
+    assert.deepEqual(await snapshot(lib.dir), before, `move ${call}`);
+    assert.equal(await statusOf(lib.journals), "undone", `move ${call}`);
+  }
+});
 
 /**
  * Leaves a library as a crash would: the first `done` operations carried out, and the journal
