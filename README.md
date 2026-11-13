@@ -408,7 +408,7 @@ By default files are organised into Plex folders (`Show (2022)/Season 01/…`, `
 - **Sources are checked again.** Source size and modification time are checked again before execution and before undo. These checks are not content hashes and cannot detect edits that preserve both values.
 - **Moves cannot overwrite.** Files use a hard-link-then-unlink operation to avoid rename's overwrite behavior. On filesystems without hard links (exFAT, FAT, many network shares) the app falls back to checking that the destination is free and then renaming; a file created at the destination in the instant between that check and the rename is the one case this cannot rule out. The fallback is covered by tests that simulate the missing hard-link support; it has not yet been run on real exFAT or SMB volumes.
 - **Every step is journaled first.** Journals are flushed before each operation. Interrupted batches can leave both paths referring to the same file. Recovery recognizes that state.
-- **Undo is cautious.** Undo refuses changed video files, occupied original paths, and changed NFO contents. This assumes folders are not being concurrently modified by another program; pause other organizers while applying or undoing.
+- **Undo is cautious.** Undo refuses changed video files, occupied original paths, and changed NFO contents. A move that was started but never made, with the file still at its old name and another program's file at the new one, is passed over: that file is left where it is and undo carries on. This assumes folders are not being concurrently modified by another program; pause other organizers while applying or undoing.
 
 ## Current limits
 

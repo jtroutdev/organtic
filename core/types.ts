@@ -226,7 +226,8 @@ export interface Plan {
 }
 
 export type JournalEvent =
-  | { type: "plan"; plan: Plan }
+  /** `version` is the journal format; a record without one is version 1. */
+  | { type: "plan"; version?: number; plan: Plan }
   | { type: "intent" | "undo-done"; index: number }
   /** `size` is recorded for downloads, so undo only removes a file it still recognises. */
   | { type: "done"; index: number; size?: number }

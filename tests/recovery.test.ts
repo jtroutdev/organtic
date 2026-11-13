@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { scanPaths, createPlan, applyPlan, undoBatch, history, BatchNotStarted, STOPPED } from "../core/files.ts";
+import { scanPaths, createPlan, applyPlan, undoBatch, history, BatchNotStarted, STOPPED, JOURNAL_VERSION } from "../core/files.ts";
 import type { FileOps } from "../core/files.ts";
 import type { Media, Plan } from "../core/types.ts";
 
@@ -273,6 +273,70 @@ test("a crash between linking a file's new name and removing its old one is undo
     await undoBatch(lib.plan.id, lib.journals);
     assert.deepEqual(await snapshot(lib.dir), lib.before, `operation ${index}`);
   }
+});
+
+test("a move announced but never made, with another file at its target, is passed over and undo carries on", async (t) => {
+  const { plan } = await library(t);
+  for (const [index, op] of plan.operations.entries()) {
+    if (op.type !== "move") continue;
+    const lib = await stoppedAfter(t, index);
+    const next = lib.plan.operations[index]!;
+    assert.ok(next.type === "move");
+    // Another program put its own file where this move was headed; the move itself never ran.
+    await fs.mkdir(path.dirname(next.target), { recursive: true });
+    await fs.writeFile(next.target, "someone else's file");
+    await lib.write([...lib.records, JSON.stringify({ type: "intent", index })]);
+    await undoBatch(lib.plan.id, lib.journals);
+    const after = await snapshot(lib.dir);
+    const where = `operation ${index}`;
+    for (const [name, contents] of Object.entries(lib.before))
+      assert.equal(after[name], contents, `${where}: ${name}`);
+    assert.equal(await fs.readFile(next.target, "utf8"), "someone else's file", where);
+    assert.equal(await statusOf(lib.journals), "undone", where);
+  }
+});
+
+test("a move that was done is not passed over, even when its old name looks untouched", async (t) => {
+  const lib = await library(t);
+  await applyPlan(lib.plan, lib.journals);
+  const move = lib.plan.operations.find((op) => op.type === "move")!;
+  assert.ok(move.type === "move");
+  // After the batch, a file just like the original appears at the old name and the renamed
+  // one is replaced: the move did happen, so neither is passed over.
+  const original = await fs.readFile(move.target);
+  await fs.mkdir(path.dirname(move.source), { recursive: true });
+  await fs.writeFile(move.source, original);
+  await fs.utimes(move.source, move.fingerprint.mtimeMs / 1000, move.fingerprint.mtimeMs / 1000);
+  await fs.rm(move.target);
+  await fs.writeFile(move.target, "changed");
+  await assert.rejects(undoBatch(lib.plan.id, lib.journals), /recovery stopped/);
+  assert.equal(await fs.readFile(move.target, "utf8"), "changed");
+});
+
+test("the plan record carries the journal format, and a record without one is read as the first", async (t) => {
+  const lib = await library(t);
+  await applyPlan(lib.plan, lib.journals);
+  const [first] = await linesOf(lib.journal);
+  assert.equal(JSON.parse(first!).version, JOURNAL_VERSION);
+  assert.equal(JOURNAL_VERSION, 1);
+  // Journals written before the version existed.
+  const old = await stoppedAfter(t, 2);
+  assert.equal(JSON.parse((await linesOf(old.journal))[0]!).version, undefined);
+  await undoBatch(old.plan.id, old.journals);
+  assert.deepEqual(await snapshot(old.dir), old.before);
+});
+
+test("a record from a newer journal format is refused, not undone", async (t) => {
+  const lib = await library(t);
+  await applyPlan(lib.plan, lib.journals);
+  const after = await snapshot(lib.dir);
+  const [first, ...rest] = await linesOf(lib.journal);
+  await fs.writeFile(
+    lib.journal,
+    [JSON.stringify({ ...JSON.parse(first!), version: JOURNAL_VERSION + 1 }), ...rest].join("\n") + "\n",
+  );
+  await assert.rejects(undoBatch(lib.plan.id, lib.journals), /newer version of Organtic/);
+  assert.deepEqual(await snapshot(lib.dir), after);
 });
 
 test("an undo that stopped before recording its last step finishes on the next attempt", async (t) => {
