@@ -1132,6 +1132,9 @@ async function runPlan(
         if (index > start && signal?.aborted) throw new Error(STOPPED);
         const op = plan.operations[index]!;
         begun = index;
+        // Windows will not rename or remove a folder while a file inside it is open, and the
+        // files this batch wrote are held open until they are flushed.
+        if (op.type === "rename" || op.type === "rmdir") await settle();
         let size: number | undefined;
         let skipped: string | undefined;
         if (op.type === "move") await noReplaceMove(op, io);

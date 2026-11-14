@@ -850,7 +850,10 @@ test("a change to many groups is described a slice at a time and sent once, as t
     while (updates.length < count) await new Promise((resolve) => setTimeout(resolve, 1));
   };
   await session.addFiles(await scanPaths([dir]));
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  // Each slice waits on a timer, which on Windows can take 15 ms or more: wait for the window to
+  // catch up rather than for a fixed time.
+  for (let tries = 0; tries < 200 && JSON.stringify(window) !== JSON.stringify(session.state()); tries++)
+    await new Promise((resolve) => setTimeout(resolve, 5));
   assert.deepEqual(window, session.state());
 
   // A settings change reaches every group. While it is being described, one group is removed
