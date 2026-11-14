@@ -35,10 +35,13 @@ contextBridge.exposeInMainWorld("organtic", {
       "openReference",
       "openSourcePage",
       "showLog",
+      "stop",
     ].map((method) => [method, invoke(method)]),
   ),
   onQueue: (listener) =>
     ipcRenderer.on("media:queue", (_event, update) => listener(update)),
+  onProgress: (listener) =>
+    ipcRenderer.on("media:progress", (_event, progress) => listener(progress)),
   // Paths come only from real dropped files; the page cannot name a path itself.
   addDropped: (files) =>
     invoke("addPaths")(

@@ -8,15 +8,18 @@ import ListItem from "../components/ListItem.vue";
 import NoticeBanner from "../components/NoticeBanner.vue";
 import OptionsMenu from "../components/OptionsMenu.vue";
 import PageHeading from "../components/PageHeading.vue";
+import ProgressBar from "../components/ProgressBar.vue";
 import SkeletonBlock from "../components/SkeletonBlock.vue";
 import SplitView from "../components/SplitView.vue";
 import StepFooter from "../components/StepFooter.vue";
 import SummaryStats from "../components/SummaryStats.vue";
 import SurfaceCard from "../components/SurfaceCard.vue";
 import TreeRow from "../components/TreeRow.vue";
-import { api, apply, confirmed, go, plural, run, saveSettings, store } from "../store.ts";
+import { api, apply, confirmed, go, plural, run, saveSettings, stop, store } from "../store.ts";
 
 const preview = computed(() => store.preview);
+// The batch being applied, once it has started.
+const applying = computed(() => (store.progress?.kind === "apply" ? store.progress : null));
 // Until the first preview is back the page keeps its shape, with outlines where the names will be.
 const loading = computed(() => !store.applied && !preview.value && store.previewLoading);
 /** One outlined row for each group the preview is expected to list, up to a screenful. */
@@ -191,12 +194,21 @@ async function toggle(key: string, box: HTMLInputElement) {
             }}
           </template>
         </PageHeading>
-        <SurfaceCard bar>
+        <SurfaceCard bar class="summary">
           <SummaryStats v-if="preview" :stats="stats" />
           <div v-else class="row ghoststats">
             <SkeletonBlock v-for="n in 3" :key="n" width="short" />
           </div>
           <OptionsMenu id="preview-options" label="Options" :options="menu" @toggle="toggle" />
+          <!-- An applying batch fills the card's bottom rule, so nothing moves to make room. -->
+          <ProgressBar
+            v-if="applying"
+            under
+            inset
+            label="Changes applied"
+            :value="applying.done"
+            :max="applying.total"
+          />
         </SurfaceCard>
         <NoticeBanner v-if="clashes" tone="bad"
           ><b>{{ plural(clashes, "file") }} cannot be renamed as planned.</b>
@@ -348,7 +360,14 @@ async function toggle(key: string, box: HTMLInputElement) {
       </SurfaceCard>
       <StepFooter>
         <template #back>
-          <ActionButton @click="go('review')">Back to Matching</ActionButton>
+          <ActionButton :disabled="!!applying" @click="go('review')">Back to Matching</ActionButton>
+          <template v-if="applying">
+            <span class="muted"
+              >Applying changes: {{ applying.done }} of
+              {{ plural(applying.total, "operation") }} done</span
+            >
+            <ActionButton @click="stop">Stop</ActionButton>
+          </template>
         </template>
         <ActionButton
           variant="primary"
@@ -364,6 +383,7 @@ async function toggle(key: string, box: HTMLInputElement) {
 </template>
 
 <style scoped>
+.summary{position:relative}
 .dest{display:flex;flex-wrap:wrap;gap:var(--space-dense) var(--space-nested);align-items:center}
 .dest .mono{min-width:0}
 .tree{font:var(--font-code-md);font-weight:400;display:grid;grid-template-columns:minmax(0,1fr);grid-auto-rows:max-content;align-content:start;overflow-wrap:anywhere}

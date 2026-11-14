@@ -170,7 +170,8 @@ async function start() {
           }
         return plan;
       },
-      applyPlan: (plan, signal) => applyPlan(plan, journalDir, undefined, signal),
+      applyPlan: (plan, signal, onProgress) =>
+        applyPlan(plan, journalDir, undefined, signal, onProgress),
     },
     onUpdate: (update) => mainWindow?.webContents.send("media:queue", update),
     // About a frame: a burst of lookups reaches the window as one update.
@@ -181,7 +182,7 @@ async function start() {
   type Handlers = {
     [K in Exclude<
       keyof MediaApi,
-      "desktop" | "onQueue" | "addDropped"
+      "desktop" | "onQueue" | "onProgress" | "addDropped"
     >]: MediaApi[K];
   } & { addPaths(paths: string[]): Promise<void> };
   // A failure is logged, then reaches the window as it is.
@@ -322,6 +323,20 @@ async function start() {
   });
   register("resetDestination", async (key) => session.setDestination(key, null));
   register("preview", () => session.preview());
+  /**
+   * Reports a batch's progress to the window about ten times a second, and always its start
+   * and its last operation, so the bar neither floods the bridge nor stops short.
+   */
+  const progressOf = (kind: BatchKind) => {
+    let sent = 0;
+    return (done: number, total: number) => {
+      const now = Date.now();
+      if (done !== 0 && done !== total && now - sent < 100) return;
+      sent = now;
+      mainWindow?.webContents.send("media:progress", { kind, done, total });
+    };
+  };
+  register("stop", async () => guard.stop());
   register("apply", (id) =>
     guard.run("apply", async (signal) => {
       const plan = session.pending(id);
@@ -335,7 +350,7 @@ async function start() {
       );
       // Asked to stop while the confirmation was open.
       if (!confirmed || signal.aborted) return { canceled: true };
-      return await session.apply(id, signal);
+      return await session.apply(id, signal, progressOf("apply"));
     }),
   );
   register("history", () => history(journalDir));
@@ -351,7 +366,7 @@ async function start() {
       // Files still queued under a folder that got its old name back are followed there,
       // also when the undo stopped part-way.
       try {
-        const { renamed } = await undoBatch(id, journalDir, undefined, signal);
+        const { renamed } = await undoBatch(id, journalDir, undefined, signal, progressOf("undo"));
         if (renamed.length) session.relocate(renamed);
       } catch (error) {
         const partial = (error as { renamed?: unknown } | null)?.renamed;

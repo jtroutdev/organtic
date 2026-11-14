@@ -47,6 +47,11 @@ export class ExitGuard {
     }
   }
 
+  /** Stops the running batch or undo after the operation in hand; nothing when none runs. */
+  stop() {
+    this.#running?.controller.abort();
+  }
+
   /**
    * Called when the window is about to close or the app to quit. True when it may go ahead now;
    * false when a batch is running, in which case the person is asked and the exit, if they want

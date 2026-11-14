@@ -4,6 +4,7 @@ import { applyQueueUpdate } from "../core/queueUpdate.ts";
 import { DEFAULT_SETTINGS } from "../core/settings.ts";
 import type {
   AppSettings,
+  BatchProgress,
   BatchSummary,
   GroupStatus,
   PreviewState,
@@ -63,6 +64,8 @@ export const store = reactive({
   /** Counts completed page changes, so focus can move once the new page has its content. */
   visits: 0,
   busy: false,
+  /** How far the running batch or undo has got; null when none is running. */
+  progress: null as BatchProgress | null,
 });
 
 export function announce(message: string) {
@@ -219,8 +222,20 @@ export async function saveSettings(change: Partial<AppSettings>) {
 export async function apply() {
   const preview = store.preview;
   if (!preview) return;
-  const result = await run(() => api.apply(preview.id));
-  if (!result) return void loadPreview();
+  let result;
+  try {
+    result = await run(() => api.apply(preview.id));
+  } finally {
+    store.progress = null;
+  }
+  if (!result) {
+    // The batch stopped or failed. Preview is built again from what is left, which can fail
+    // while the queue is still catching up; the batch's own message is the one to keep.
+    const message = store.error;
+    await loadPreview();
+    if (message) store.error = message;
+    return;
+  }
   if (result.canceled) return;
   announce(`${result.completed ?? 0} changes applied.`);
   const destinations = [...new Set(preview.groups.map((group) => group.destination))];
@@ -232,7 +247,22 @@ export async function apply() {
   store.preview = null;
 }
 
+/** Asks the running batch or undo to stop once the file in hand is done. */
+export async function stop() {
+  // Not through run(): the batch it stops is still the action in progress.
+  try {
+    await api.stop();
+    announce("Stopping after the file in hand.");
+  } catch (error) {
+    store.error = error instanceof Error ? error.message : String(error);
+  }
+}
+
 export async function init() {
+  api.onProgress((progress) => {
+    // A last report can arrive after the call it belongs to has returned.
+    if (store.busy) store.progress = progress;
+  });
   api.onQueue((update) => {
     if (update.lookups && !store.queue.lookups)
       announce(`Looking up ${plural(update.lookups.total, "group")}.`);

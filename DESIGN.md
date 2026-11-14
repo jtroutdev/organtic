@@ -396,7 +396,7 @@ All interactive components answer the same states.
 - **Pressed** lays the pressed layer instead. The primary button is the one exception: it has hover and pressed fills of its own, so its white label keeps its contrast.
 - **Focus** is a 2px accent ring, offset 2px outside the control, or drawn inside the row for list items.
 - **Unavailable** is 50% opacity with a not-allowed pointer, for a control that is off for a reason of its own.
-- **Busy** keeps the resting look and changes only the pointer. A running action never dims the screen. Waiting shows where it was started (the button) or where its result lands (a bar on the rule under a heading, a pulsing tally, a skeleton).
+- **Busy** keeps the resting look and changes only the pointer. A running action never dims the screen. Waiting shows where it was started (the button) or where its result lands (a bar on the rule under a heading, a pulsing tally, a skeleton). On a card's bottom edge the bar stops short of the rounded corners. Work the person can stop says how far it has got in words beside the action, with a Stop button: lookups on Matching, a batch on Preview, an undo in History.
 - **Invalid** gives an input an error edge and a sentence underneath that says why.
 
 **Button.** Default, primary and quiet. One primary per step. Quiet is for the least important action in a row; it has no fill or edge at rest and shows whatever surface it sits on, as do tabs, segments and the kind tag. Their tokens name the surface they are usually on. The compact button is for a value in a table row that opens an editor, such as an episode code.

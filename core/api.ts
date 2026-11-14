@@ -6,6 +6,7 @@ import type {
   PreviewState,
   QueueState,
   QueueUpdate,
+  BatchProgress,
   SearchRequest,
   SourcesState,
 } from "./types.ts";
@@ -37,6 +38,13 @@ export interface MediaApi {
     notice?: string;
   }>;
   onQueue(listener: (update: QueueUpdate) => void): void;
+  /** How far a running batch or undo has got, a few times a second while it runs. */
+  onProgress(listener: (progress: BatchProgress) => void): void;
+  /**
+   * Stops the running batch or undo once the operation in hand is finished. What was done is
+   * recorded, and History can put it back.
+   */
+  stop(): Promise<void>;
   addFiles(): Promise<void>;
   addFolder(): Promise<void>;
   /** Files or folders dropped onto the window. */

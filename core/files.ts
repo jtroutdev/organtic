@@ -1,5 +1,6 @@
 import * as fs from "node:fs/promises";
 import type { Stats } from "node:fs";
+import type { FileHandle } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { VIDEO_EXTENSIONS, SUBTITLE_EXTENSIONS, makeNfo } from "./media.ts";
@@ -849,15 +850,39 @@ async function download(
   return size;
 }
 
-async function append(file: string, event: JournalEvent) {
-  const handle = await fs.open(file, "a", 0o600);
-  try {
-    await handle.writeFile(JSON.stringify(event) + "\n");
-    await handle.sync();
-  } finally {
-    await handle.close();
+/**
+ * A history record held open for one batch or one undo. Records are written as they happen and
+ * reach the disk at `flush`; the caller flushes whatever must be there before its next change.
+ * Opening the file and flushing it for every record cost about 4.5 ms each on an SSD.
+ */
+class JournalWriter {
+  readonly #handle: FileHandle;
+  private constructor(handle: FileHandle) {
+    this.#handle = handle;
+  }
+  static async open(file: string) {
+    return new JournalWriter(await fs.open(file, "a", 0o600));
+  }
+  async write(event: JournalEvent) {
+    await this.#handle.write(JSON.stringify(event) + "\n");
+  }
+  async flush() {
+    await this.#handle.sync();
+  }
+  async close() {
+    await this.#handle.close();
   }
 }
+
+/**
+ * How many operations are announced in the history record with one flush. Recovery treats an
+ * announced operation as possibly started, and undo already passes over one that never ran, so
+ * announcing a run of them costs nothing in safety and saves a flush for every file.
+ */
+const ANNOUNCE_EVERY = 64;
+
+/** How far a batch or an undo has got: operations finished, of all it has to do. */
+export type Progress = (done: number, total: number) => void;
 
 // What link() reports on volumes without hard links (exFAT, FAT, many SMB and FUSE mounts).
 const LINK_UNSUPPORTED = new Set([
@@ -1009,6 +1034,7 @@ export async function applyPlan(
   journalDir: string,
   io: FileOps = fs,
   signal?: AbortSignal,
+  onProgress?: Progress,
 ) {
   if (signal?.aborted)
     throw new BatchNotStarted(`${STOPPED} Nothing was changed.`);
@@ -1019,20 +1045,24 @@ export async function applyPlan(
   }
   const journal = path.join(journalDir, `${plan.id}.jsonl`);
   let created = false;
+  let writer: JournalWriter | undefined;
   try {
     await fs.writeFile(journal, "", { flag: "wx", mode: 0o600 });
     created = true;
-    await append(journal, { type: "plan", version: JOURNAL_VERSION, plan });
+    writer = await JournalWriter.open(journal);
+    await writer.write({ type: "plan", version: JOURNAL_VERSION, plan });
+    await writer.flush();
   } catch (error) {
     // The record is written before the first change, so a batch without one never began.
     // Only a record this call made is removed; one already there belongs to another batch.
+    await writer?.close().catch(() => {});
     if (created) await fs.rm(journal, { force: true }).catch(() => {});
     throw new BatchNotStarted(
       `The history record could not be written, so nothing was changed. ${messageOf(error)}`,
       { cause: error },
     );
   }
-  return runPlan(plan, journal, io, signal);
+  return runPlan(plan, writer, io, signal, onProgress);
 }
 
 /** Rechecks the entire batch before touching the first file. */
@@ -1061,91 +1091,133 @@ async function checkPlan(plan: Plan, journalDir: string) {
 
 async function runPlan(
   plan: Plan,
-  journal: string,
+  journal: JournalWriter,
   io: FileOps,
   signal?: AbortSignal,
+  onProgress?: Progress,
 ) {
   let completed = 0;
+  // The last operation begun; any announced after it never started.
+  let begun = -1;
   const warnings: string[] = [];
   const renamed: { from: string; to: string }[] = [];
-  try {
-    for (const [index, op] of plan.operations.entries()) {
-      if (signal?.aborted) throw new Error(STOPPED);
-      await append(journal, { type: "intent", index });
-      let size: number | undefined;
-      if (op.type === "move") await noReplaceMove(op, io);
-      else if (op.type === "download") {
-        try {
-          size = await download(op, io.fetch ?? fetch);
-        } catch (error) {
-          // Artwork is a nicety; the renames it accompanies still go ahead.
-          const message = messageOf(error);
-          warnings.push(`${path.basename(op.target)}: ${message}`);
-          await append(journal, { type: "skipped", index, message });
-          continue;
-        }
-      }
-      else if (op.type === "mkdir") {
-        try {
-          await fs.mkdir(op.target);
-        } catch (error) {
-          // Someone created the folder since the preview; use it.
-          if (
-            codeOf(error) !== "EEXIST" ||
-            !(await fs.lstat(op.target)).isDirectory()
-          )
-            throw error;
-        }
-      } else if (op.type === "rmdir") {
-        try {
-          await fs.rmdir(op.target);
-        } catch (error) {
-          // Something appeared in the folder since the preview, or it is already gone: leave it.
-          if (!["ENOENT", "ENOTEMPTY", "EEXIST"].includes(codeOf(error)))
-            throw error;
-        }
-      } else if (op.type === "rename") {
-        try {
-          // rename() would replace an empty folder of the same name, so check first.
-          if (await exists(op.target))
-            throw new Error("A folder with the new name already exists.");
-          await fs.rename(op.source, op.target);
-          renamed.push({ from: op.source, to: op.target });
-        } catch (error) {
-          // Everything inside is already in place; the folder just keeps its old name.
-          const message = messageOf(error);
-          warnings.push(`${path.basename(op.source)}: ${message}`);
-          await append(journal, { type: "skipped", index, message });
-          continue;
-        }
-      } else if (op.type === "write") {
-        const handle = await fs.open(op.target, "wx", 0o644);
-        try {
-          await handle.writeFile(op.content);
-          await handle.sync();
-        } finally {
-          await handle.close();
-        }
-      }
-      completed++;
-      await append(journal, {
-        type: "done",
-        index,
-        ...(size === undefined ? {} : { size }),
-      });
+  const total = plan.operations.length;
+  // Files this batch wrote whose contents may not be on the disk yet. Each is flushed before
+  // the record that says it was written, so undo never finds one cut short.
+  let unsynced: FileHandle[] = [];
+  const settle = async () => {
+    const handles = unsynced;
+    unsynced = [];
+    try {
+      await Promise.all(handles.map((handle) => handle.sync()));
+    } finally {
+      await Promise.all(handles.map((handle) => handle.close().catch(() => {})));
     }
-    await append(journal, { type: "complete" });
+  };
+  const flush = async () => {
+    await settle();
+    await journal.flush();
+  };
+  onProgress?.(0, total);
+  try {
+    for (let start = 0; start < total; start += ANNOUNCE_EVERY) {
+      const end = Math.min(start + ANNOUNCE_EVERY, total);
+      if (signal?.aborted) throw new Error(STOPPED);
+      // Every operation of the run is announced, and the announcement is on the disk, before
+      // the first of them begins. The records of the run before go out with it.
+      for (let index = start; index < end; index++)
+        await journal.write({ type: "intent", index });
+      await flush();
+      for (let index = start; index < end; index++) {
+        if (index > start && signal?.aborted) throw new Error(STOPPED);
+        const op = plan.operations[index]!;
+        begun = index;
+        let size: number | undefined;
+        let skipped: string | undefined;
+        if (op.type === "move") await noReplaceMove(op, io);
+        else if (op.type === "download") {
+          try {
+            size = await download(op, io.fetch ?? fetch);
+          } catch (error) {
+            // Artwork is a nicety; the renames it accompanies still go ahead.
+            skipped = messageOf(error);
+          }
+        } else if (op.type === "mkdir") {
+          try {
+            await fs.mkdir(op.target);
+          } catch (error) {
+            // Someone created the folder since the preview; use it.
+            if (
+              codeOf(error) !== "EEXIST" ||
+              !(await fs.lstat(op.target)).isDirectory()
+            )
+              throw error;
+          }
+        } else if (op.type === "rmdir") {
+          try {
+            await fs.rmdir(op.target);
+          } catch (error) {
+            // Something appeared in the folder since the preview, or it is already gone: leave it.
+            if (!["ENOENT", "ENOTEMPTY", "EEXIST"].includes(codeOf(error)))
+              throw error;
+          }
+        } else if (op.type === "rename") {
+          try {
+            // rename() would replace an empty folder of the same name, so check first.
+            if (await exists(op.target))
+              throw new Error("A folder with the new name already exists.");
+            await fs.rename(op.source, op.target);
+            renamed.push({ from: op.source, to: op.target });
+          } catch (error) {
+            // Everything inside is already in place; the folder just keeps its old name.
+            skipped = messageOf(error);
+          }
+        } else if (op.type === "write") {
+          const handle = await fs.open(op.target, "wx", 0o644);
+          try {
+            await handle.writeFile(op.content);
+          } catch (error) {
+            await handle.close();
+            throw error;
+          }
+          unsynced.push(handle);
+        }
+        if (skipped !== undefined) {
+          warnings.push(
+            `${path.basename(op.type === "rename" ? op.source : op.target)}: ${skipped}`,
+          );
+          await journal.write({ type: "skipped", index, message: skipped });
+        } else {
+          completed++;
+          await journal.write({
+            type: "done",
+            index,
+            ...(size === undefined ? {} : { size }),
+          });
+          // Undo removes a downloaded image only by the size recorded here, so it is kept now.
+          if (op.type === "download") await flush();
+        }
+        onProgress?.(index + 1, total);
+      }
+    }
+    await settle();
+    await journal.write({ type: "complete" });
+    await journal.flush();
     return { id: plan.id, completed, warnings, renamed };
   } catch (error) {
-    await append(journal, { type: "failed", message: messageOf(error) }).catch(
-      () => {},
-    );
+    await settle().catch(() => {});
+    await journal
+      .write({ type: "failed", message: messageOf(error), started: begun })
+      .then(() => journal.flush())
+      .catch(() => {});
     throw Object.assign(
       new Error(
         `Stopped after ${completed} operations: ${messageOf(error)} Open History to review or undo this batch.`,
       ),
       { renamed },
     );
+  } finally {
+    await journal.close().catch(() => {});
   }
 }
 
@@ -1154,6 +1226,9 @@ async function readJournal(file: string, repairTail = false) {
   const lines = raw.split("\n");
   const events: JournalEvent[] = [];
   for (const [i, line] of lines.entries()) {
+    // A record at the import limit runs to about 45,000 lines; reading it gives way to other
+    // work now and then, after the plan, which is the longest line, and every few thousand.
+    if (i === 1 || (i && i % (YIELD_EVERY * 10) === 0)) await giveWay();
     if (!line.trim()) continue;
     try {
       events.push(JSON.parse(line));
@@ -1205,6 +1280,9 @@ export async function history(journalDir: string): Promise<BatchSummary[]> {
         if (last?.type === "done") return { outcome: "done" };
         if (last?.type === "skipped") return { outcome: "skipped", message: last.message };
         if (!started.has(index)) return { outcome: "pending" };
+        // Announced with others but never begun: the batch stopped before reaching it.
+        if (failed?.type === "failed" && failed.started !== undefined && index > failed.started)
+          return { outcome: "pending" };
         return { outcome: "failed", message: stop ?? "" };
       };
       result.push({
@@ -1247,6 +1325,7 @@ export async function undoBatch(
   journalDir: string,
   io: FileOps = fs,
   signal?: AbortSignal,
+  onProgress?: Progress,
 ) {
   if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error("Invalid batch.");
   const file = path.join(journalDir, `${id}.jsonl`);
@@ -1256,113 +1335,130 @@ export async function undoBatch(
   const started = indexesOf(events, "intent");
   const reversed = indexesOf(events, "undo-done");
   const renamed: { from: string; to: string }[] = [];
-  for (const [index, op] of [...plan.operations.entries()].reverse()) {
-    if (!started.has(index) || reversed.has(index)) continue;
-    if (signal?.aborted)
-      throw Object.assign(
-        new Error(
-          "You stopped the undo part-way. Undo the batch again from History to put back the rest.",
-        ),
-        { renamed },
-      );
-    if (op.type === "mkdir") {
-      try {
-        await fs.rmdir(op.target);
-      } catch (error) {
-        // A folder that has gained other contents, or is already gone, is left as it is.
-        if (!["ENOENT", "ENOTEMPTY", "EEXIST"].includes(codeOf(error)))
-          throw error;
-      }
-      await append(file, { type: "undo-done", index });
-      continue;
-    }
-    if (op.type === "download") {
-      // Remove the image only if it is still the one this batch saved.
-      const saved = await exists(op.target);
-      const size = events.find(
-        (e) => e.type === "done" && e.index === index && "size" in e,
-      );
-      if (
-        saved?.isFile() &&
-        size?.type === "done" &&
-        saved.size === size.size
-      )
-        await fs.unlink(op.target);
-      await append(file, { type: "undo-done", index });
-      continue;
-    }
-    if (op.type === "rename") {
-      const source = await exists(op.source);
-      const target = await exists(op.target);
-      if (target && !source) {
-        await fs.rename(op.target, op.source);
-        renamed.push({ from: op.target, to: op.source });
-      } else if (
-        target &&
-        events.some((e) => e.type === "done" && e.index === index)
-      )
-        throw new Error(
-          `Both folder names are in use; recovery stopped: ${op.source}`,
+  const todo = [...plan.operations.entries()]
+    .reverse()
+    .filter(([index]) => started.has(index) && !reversed.has(index));
+  // Putting an operation back is safe to repeat: one undone but not yet recorded as undone is
+  // found already back in place next time. So the records go to the disk at the end, or when
+  // undo stops, rather than once for every file.
+  const journal = await JournalWriter.open(file);
+  let finished = 0;
+  onProgress?.(0, todo.length);
+  const putBack = async (index: number) => {
+    await journal.write({ type: "undo-done", index });
+    onProgress?.(++finished, todo.length);
+  };
+  try {
+    for (const [index, op] of todo) {
+      if (signal?.aborted)
+        throw Object.assign(
+          new Error(
+            "You stopped the undo part-way. Undo the batch again from History to put back the rest.",
+          ),
+          { renamed },
         );
-      await append(file, { type: "undo-done", index });
-      continue;
-    }
-    if (op.type === "rmdir") {
-      // Put the removed folder back so the files can return to it.
-      await fs.mkdir(op.target, { recursive: true });
-      await append(file, { type: "undo-done", index });
-      continue;
-    }
-    const target = await exists(op.target);
-    if (op.type === "write") {
-      if (target) {
-        if (
-          !target.isFile() ||
-          target.isSymbolicLink() ||
-          (await fs.readFile(op.target, "utf8")) !== op.content
-        )
-          throw new Error(`Metadata changed; recovery stopped: ${op.target}`);
-        await fs.unlink(op.target);
-      }
-    } else {
-      const source = await exists(op.source);
-      // Started but never done, with the file still at its old name and something else at the
-      // new one: the move never happened, and what is at the target is not this batch's to touch.
-      if (
-        target &&
-        same(source, op.fingerprint) &&
-        (target.dev !== source!.dev || target.ino !== source!.ino) &&
-        !events.some((e) => e.type === "done" && e.index === index)
-      ) {
-        await append(file, { type: "undo-done", index });
+      if (op.type === "mkdir") {
+        try {
+          await fs.rmdir(op.target);
+        } catch (error) {
+          // A folder that has gained other contents, or is already gone, is left as it is.
+          if (!["ENOENT", "ENOTEMPTY", "EEXIST"].includes(codeOf(error)))
+            throw error;
+        }
+        await putBack(index);
         continue;
       }
-      if (source && !same(source, op.fingerprint))
-        throw new Error(
-          `Original path is occupied; recovery stopped: ${op.source}`,
+      if (op.type === "download") {
+        // Remove the image only if it is still the one this batch saved.
+        const saved = await exists(op.target);
+        const size = events.find(
+          (e) => e.type === "done" && e.index === index && "size" in e,
         );
-      if (target && !same(target, op.fingerprint))
-        throw new Error(`Renamed file changed; recovery stopped: ${op.target}`);
-      if (!target && !source)
-        throw new Error(
-          `Both paths are missing; recovery stopped: ${op.source}`,
-        );
-      if (target && !source)
-        await noReplaceMove(
-          { source: op.target, target: op.source, fingerprint: op.fingerprint },
-          io,
-        );
-      else if (target && source) {
-        // Interrupted after link, before unlink: both names must be the same file.
-        if (target.dev !== source.dev || target.ino !== source.ino)
-          throw new Error(
-            `Both paths hold separate files; recovery stopped: ${op.source}`,
-          );
-        await fs.unlink(op.target);
+        if (
+          saved?.isFile() &&
+          size?.type === "done" &&
+          saved.size === size.size
+        )
+          await fs.unlink(op.target);
+        await putBack(index);
+        continue;
       }
+      if (op.type === "rename") {
+        const source = await exists(op.source);
+        const target = await exists(op.target);
+        if (target && !source) {
+          await fs.rename(op.target, op.source);
+          renamed.push({ from: op.target, to: op.source });
+        } else if (
+          target &&
+          events.some((e) => e.type === "done" && e.index === index)
+        )
+          throw new Error(
+            `Both folder names are in use; recovery stopped: ${op.source}`,
+          );
+        await putBack(index);
+        continue;
+      }
+      if (op.type === "rmdir") {
+        // Put the removed folder back so the files can return to it.
+        await fs.mkdir(op.target, { recursive: true });
+        await putBack(index);
+        continue;
+      }
+      const target = await exists(op.target);
+      if (op.type === "write") {
+        if (target) {
+          if (
+            !target.isFile() ||
+            target.isSymbolicLink() ||
+            (await fs.readFile(op.target, "utf8")) !== op.content
+          )
+            throw new Error(`Metadata changed; recovery stopped: ${op.target}`);
+          await fs.unlink(op.target);
+        }
+      } else {
+        const source = await exists(op.source);
+        // Started but never done, with the file still at its old name and something else at the
+        // new one: the move never happened, and what is at the target is not this batch's to touch.
+        if (
+          target &&
+          same(source, op.fingerprint) &&
+          (target.dev !== source!.dev || target.ino !== source!.ino) &&
+          !events.some((e) => e.type === "done" && e.index === index)
+        ) {
+          await putBack(index);
+          continue;
+        }
+        if (source && !same(source, op.fingerprint))
+          throw new Error(
+            `Original path is occupied; recovery stopped: ${op.source}`,
+          );
+        if (target && !same(target, op.fingerprint))
+          throw new Error(`Renamed file changed; recovery stopped: ${op.target}`);
+        if (!target && !source)
+          throw new Error(
+            `Both paths are missing; recovery stopped: ${op.source}`,
+          );
+        if (target && !source)
+          await noReplaceMove(
+            { source: op.target, target: op.source, fingerprint: op.fingerprint },
+            io,
+          );
+        else if (target && source) {
+          // Interrupted after link, before unlink: both names must be the same file.
+          if (target.dev !== source.dev || target.ino !== source.ino)
+            throw new Error(
+              `Both paths hold separate files; recovery stopped: ${op.source}`,
+            );
+          await fs.unlink(op.target);
+        }
+      }
+      await putBack(index);
     }
-    await append(file, { type: "undo-done", index });
+    await journal.write({ type: "undone" });
+  } finally {
+    await journal.flush().catch(() => {});
+    await journal.close().catch(() => {});
   }
-  await append(file, { type: "undone" });
   return { id, renamed };
 }

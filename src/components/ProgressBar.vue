@@ -5,11 +5,13 @@ defineProps<{
   max: number;
   /** Drawn over the rule beneath a panel's heading, taking no room of its own. */
   under?: boolean;
+  /** With `under`, kept clear of the rounded corners of a card's bottom edge. */
+  inset?: boolean;
 }>();
 </script>
 
 <template>
-  <progress class="progress" :class="{ under }" :aria-label="label" :value="value" :max="max"></progress>
+  <progress class="progress" :class="{ under, inset }" :aria-label="label" :value="value" :max="max"></progress>
 </template>
 
 <style scoped>
@@ -18,6 +20,7 @@ defineProps<{
 .progress::-webkit-progress-value{background:var(--color-accent);transition:width var(--duration-fast)}
 .progress::-moz-progress-bar{background:var(--color-accent)}
 .progress.under{position:absolute;inset:auto 0 -1px;height:var(--space-2xs);border-radius:0}
+.progress.under.inset{inset-inline:var(--radius-md);width:auto}
 @media (prefers-reduced-motion:reduce){
   .progress::-webkit-progress-value{transition:none}
 }

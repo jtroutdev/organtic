@@ -10,7 +10,7 @@ import PageHeading from "../components/PageHeading.vue";
 import SplitView from "../components/SplitView.vue";
 import StatusPill from "../components/StatusPill.vue";
 import SurfaceCard from "../components/SurfaceCard.vue";
-import { announce, api, loadHistory, resume, resumeLabel, run, store } from "../store.ts";
+import { announce, api, loadHistory, plural, resume, resumeLabel, run, stop, store } from "../store.ts";
 
 const STATUS: Record<BatchStatus, [tone: string, label: string]> = {
   complete: ["ok", "Complete"],
@@ -65,8 +65,15 @@ const reasonOf = (op: Change) =>
   op.message && op.message !== batch.value?.stopped ? within(op.message) : undefined;
 const when = (value: string) =>
   value ? new Date(value).toLocaleString() : "Unreadable record";
+// The undo running now, once it has started.
+const undoing = computed(() => (store.progress?.kind === "undo" ? store.progress : null));
 async function undo(id: string) {
-  const result = await run(() => api.undo(id));
+  let result;
+  try {
+    result = await run(() => api.undo(id));
+  } finally {
+    store.progress = null;
+  }
   await loadHistory();
   if (result && !result.canceled) announce("Batch undone.");
 }
@@ -161,7 +168,14 @@ async function undo(id: string) {
                 : "Undo this batch"
             }}
           </ActionButton>
-          <span class="muted"
+          <template v-if="undoing">
+            <span class="muted"
+              >Putting back: {{ undoing.done }} of
+              {{ plural(undoing.total, "operation") }} done</span
+            >
+            <ActionButton @click="stop">Stop</ActionButton>
+          </template>
+          <span v-else class="muted"
             >Stops without changing anything further if a file was edited or its
             old name is taken.</span
           >

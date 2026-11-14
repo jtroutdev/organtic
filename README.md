@@ -166,6 +166,8 @@ Preview opens once every group is confirmed or removed.
 
 **Apply** opens a native confirmation. Renamed files leave the queue; everything else stays. If a file changed or a destination appeared since the preview, the batch stops before renaming anything, the queue keeps every confirmed match, and Preview is built again for you to check and apply. The wizard ends on **Done**, which says how many operations completed and where.
 
+While a batch is applied, Preview shows how far it has got, with **Stop**; while one is undone, History does the same. Stop lets the file in hand finish and records where the batch stopped, and History can undo what was done.
+
 Closing the window or quitting while a batch is being applied or undone asks first: **Keep open**, **Close when finished**, or **Stop and close**. Stopping lets the file in hand finish, records where the batch stopped, and then closes; History shows the batch as stopped and can undo what was done. A stopped undo carries on from where it stopped when you undo the batch again.
 
 ### History and Settings
@@ -412,7 +414,7 @@ By default files are organised into Plex folders (`Show (2022)/Season 01/…`, `
 - **Every target is checked.** All targets are checked for existing files and case/Unicode-equivalent names. Duplicate targets and case-only renames are blocked.
 - **Sources are checked again.** Source size and modification time are checked again before execution and before undo. These checks are not content hashes and cannot detect edits that preserve both values.
 - **Moves cannot overwrite.** Files use a hard-link-then-unlink operation to avoid rename's overwrite behavior. On filesystems without hard links (exFAT, FAT, many network shares) the app falls back to checking that the destination is free and then renaming; a file created at the destination in the instant between that check and the rename is the one case this cannot rule out. The fallback is covered by tests that simulate the missing hard-link support; it has not yet been run on real exFAT or SMB volumes.
-- **Every step is journaled first.** Journals are flushed before each operation. Interrupted batches can leave both paths referring to the same file. Recovery recognizes that state.
+- **Every step is journaled first.** Operations are announced in the journal, and the announcement flushed to disk, before any of them begins: up to 64 at a time, so a long batch is not held up by a flush for every file. An announced operation that never ran is recognised and passed over by undo. Interrupted batches can leave both paths referring to the same file. Recovery recognizes that state.
 - **Undo is cautious.** Undo refuses changed video files, occupied original paths, and changed NFO contents. A move that was started but never made, with the file still at its old name and another program's file at the new one, is passed over: that file is left where it is and undo carries on. This assumes folders are not being concurrently modified by another program; pause other organizers while applying or undoing.
 
 ## Current limits
