@@ -160,8 +160,12 @@ async function run(library: Library, base: string) {
     };
 
     const imported = await phase(async () => session.addFiles(await scanPaths([media])));
-    // Let the last update of the run go out before counting.
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // Let the last update of the run go out before counting: it is built a slice at a time,
+    // so wait until one has come and none has followed for 100 ms.
+    for (let seen = -1; !pushes || seen !== pushes; ) {
+      seen = pushes;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
     const queue = session.state();
     const suggested = queue.groups.filter((group) => group.status === "suggested").length;
     const lookupPushes = pushes;

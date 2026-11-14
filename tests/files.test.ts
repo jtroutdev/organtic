@@ -860,3 +860,76 @@ test("a folder on another drive is told apart from one on the same drive", async
   if (!other || other.dev === (await fs.stat(f.dir)).dev) return t.skip("no second drive here");
   assert.equal(await onSameDrive("/dev/shm", [f.file!.path]), false);
 });
+
+test("in a folder of many videos, each subtitle and sidecar goes with the longest video name it starts with", async (t) => {
+  const lib = await library(t, [
+    "Films/Dune.mkv",
+    "Films/Dune.en.srt",
+    "Films/Dune.en.forced.srt",
+    "Films/Dune-poster.jpg",
+    "Films/Dune-2.mkv",
+    "Films/Dune-2.srt",
+    "Films/Dune-2-poster.jpg",
+    "Films/Dune-2.nfo",
+    "Films/Dune.2.mkv",
+    "Films/Dune.2.en.srt",
+    // A subtitle is only ever named after its video with a dot, so this one has no video.
+    "Films/Dune-extra.srt",
+    "Films/Arrival.mkv",
+    "Films/Arrival.EN.SRT",
+  ]);
+  const film = (title: string, year: number, id: number): Media => ({ ...media, title, year, id });
+  const plan = await createPlan(
+    [
+      { file: lib.byName("Films/Dune.mkv"), media: film("Dune", 1984, 841) },
+      { file: lib.byName("Films/Dune-2.mkv"), media: film("Dune", 2021, 438631) },
+      { file: lib.byName("Films/Dune.2.mkv"), media: film("Dune Part Two", 2024, 693134) },
+      { file: lib.byName("Films/Arrival.mkv"), media: film("Arrival", 2016, 329865) },
+    ],
+    { organize: false },
+  );
+  assert.deepEqual(plan.errors, []);
+  const moves = Object.fromEntries(
+    plan.operations.flatMap((op) =>
+      op.type === "move" ? [[path.basename(op.source), path.basename(op.target)]] : [],
+    ),
+  );
+  assert.deepEqual(moves, {
+    "Dune.mkv": "Dune (1984).mkv",
+    "Dune.en.srt": "Dune (1984).en.srt",
+    "Dune.en.forced.srt": "Dune (1984).en.forced.srt",
+    "Dune-poster.jpg": "Dune (1984)-poster.jpg",
+    "Dune-2.mkv": "Dune (2021).mkv",
+    "Dune-2.srt": "Dune (2021).srt",
+    "Dune-2-poster.jpg": "Dune (2021)-poster.jpg",
+    "Dune-2.nfo": "Dune (2021).nfo",
+    "Dune.2.mkv": "Dune Part Two (2024).mkv",
+    "Dune.2.en.srt": "Dune Part Two (2024).en.srt",
+    "Arrival.mkv": "Arrival (2016).mkv",
+    "Arrival.EN.SRT": "Arrival (2016).EN.SRT",
+  });
+});
+
+test("a file reached twice in one import is listed once", async (t) => {
+  const lib = await library(t, ["Show/Severance.S01E01.mkv"]);
+  const { files } = await scanPaths([
+    lib.dir,
+    path.join(lib.dir, "Show"),
+    path.join(lib.dir, "Show/Severance.S01E01.mkv"),
+  ]);
+  assert.deepEqual(files.map((file) => file.name), ["Severance.S01E01.mkv"]);
+});
+
+test("the check before a batch refuses a destination that appeared beside many planned files", async (t) => {
+  const names = Array.from({ length: 40 }, (_, at) => `Show/Severance.S01E${String(at + 1).padStart(2, "0")}.mkv`);
+  const lib = await library(t, names);
+  const plan = await createPlan(
+    lib.files.map((file, at) => ({ file, media: episode(at + 1, `Part ${at + 1}`) })),
+    { organize: false },
+  );
+  assert.deepEqual(plan.errors, []);
+  const last = plan.operations.at(-1)!;
+  await fs.writeFile(last.target, "arrived after the preview");
+  await assert.rejects(applyPlan(plan, lib.journals), /A destination now exists/);
+  for (const name of names) await fs.access(path.join(lib.dir, name));
+});

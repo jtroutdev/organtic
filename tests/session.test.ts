@@ -820,3 +820,57 @@ test("updates carry only what changed, and a burst of changes goes out as one", 
   await settle();
   assert.deepEqual(window, { groups: [], skipped: [], unread: [], lookups: null });
 });
+
+test("a change to many groups is described a slice at a time and sent once, as the queue is when sent", async (t) => {
+  const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "organtic-")));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  for (const name of ["Severance.S01E01.mkv", "Severance.S01E02.mkv", "Arrival.2016.mkv", "Solaris.mkv"])
+    await fs.writeFile(path.join(dir, name), name);
+  const providers = new Providers({ fetcher: tmdb });
+  providers.setToken("test");
+  const updates: QueueUpdate[] = [];
+  const window: QueueState = { groups: [], skipped: [], unread: [], lookups: null };
+  // Updates go out at once until the test holds the next one back to start it by hand.
+  let held: (() => void) | null = null;
+  let hold = false;
+  const session = new Session({
+    providers,
+    settings: DEFAULT_SETTINGS,
+    planner: { createPlan, applyPlan: (plan) => applyPlan(plan, path.join(dir, ".journals")) },
+    onUpdate: (update) => {
+      updates.push(update);
+      applyQueueUpdate(window, update);
+    },
+    defer: (flush) => (hold ? (held = flush) : queueMicrotask(flush)),
+    // Other work is let in after every file.
+    describeEvery: 1,
+  });
+  const keyOf = (title: string) => session.state().groups.find((g) => g.parsedTitle === title)!.key;
+  const sent = async (count: number) => {
+    while (updates.length < count) await new Promise((resolve) => setTimeout(resolve, 1));
+  };
+  await session.addFiles(await scanPaths([dir]));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.deepEqual(window, session.state());
+
+  // A settings change reaches every group. While it is being described, one group is removed
+  // and another confirmed.
+  updates.length = 0;
+  hold = true;
+  session.updateSettings(mergeSettings({ preset: "jellyfin" }));
+  hold = false;
+  held!();
+  session.remove(keyOf("Solaris"));
+  session.confirm(keyOf("Arrival"));
+  await sent(1);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(updates.length, 1, "one update for the whole run of changes");
+  assert.deepEqual(updates[0]!.groups.map((g) => g.parsedTitle).sort(), ["Arrival", "Severance"]);
+  assert.equal(updates[0]!.groups.find((g) => g.parsedTitle === "Arrival")!.status, "confirmed");
+  assert.deepEqual(window, session.state());
+
+  // The next change goes out as usual.
+  session.confirm(keyOf("Severance"));
+  await sent(2);
+  assert.deepEqual(window, session.state());
+});

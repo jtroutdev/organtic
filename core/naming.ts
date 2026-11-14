@@ -91,10 +91,24 @@ export function validateTemplate(template: string, kind: MediaKind): string[] {
   return errors;
 }
 
+// What validateTemplate said about each template lately: a batch renders one or two templates
+// for every file, and the answer for a template never changes.
+const checked = new Map<string, string[]>();
+function problemsWith(template: string, kind: MediaKind) {
+  if (typeof template !== "string") return validateTemplate(template, kind);
+  const id = `${kind}/${template}`;
+  let errors = checked.get(id);
+  if (!errors) {
+    if (checked.size >= 16) checked.clear();
+    checked.set(id, (errors = validateTemplate(template, kind)));
+  }
+  return errors;
+}
+
 /** Renders a template into safe path segments: zero or more folders, then the file stem. */
 export function renderTemplate(template: string, media: MediaLike): string[] {
   if (!media?.title?.trim()) throw new Error("Choose a match first.");
-  const errors = validateTemplate(template, media.kind);
+  const errors = problemsWith(template, media.kind);
   if (errors.length) throw new Error(errors.join(" "));
   const { season, episode, episodeEnd } = media;
   if (

@@ -138,22 +138,42 @@ export async function run<T>(action: () => Promise<T>): Promise<T | undefined> {
   }
 }
 
-/** Previews being built: a change to the queue can ask for another before the last is back. */
-let loads = 0;
-async function loadPreview() {
-  if (!confirmed().length) {
-    store.preview = null;
-    return;
-  }
-  loads++;
+/**
+ * The preview being built. One is built at a time: a change to the queue while it is on its
+ * way asks for one more once it is back, however many changes there were.
+ */
+let loading: Promise<void> | null = null;
+let again = false;
+async function buildPreview() {
   store.previewLoading = true;
   try {
-    store.preview = await api.preview();
-  } catch (error) {
-    store.preview = null;
-    store.error = error instanceof Error ? error.message : String(error);
+    do {
+      again = false;
+      if (!confirmed().length) {
+        store.preview = null;
+        continue;
+      }
+      try {
+        store.preview = await api.preview();
+      } catch (error) {
+        store.preview = null;
+        store.error = error instanceof Error ? error.message : String(error);
+      }
+    } while (again);
   } finally {
-    if (!--loads) store.previewLoading = false;
+    store.previewLoading = false;
+  }
+}
+async function loadPreview() {
+  if (loading) {
+    again = true;
+    return loading;
+  }
+  loading = buildPreview();
+  try {
+    await loading;
+  } finally {
+    loading = null;
   }
 }
 
@@ -217,9 +237,15 @@ export async function init() {
     if (update.lookups && !store.queue.lookups)
       announce(`Looking up ${plural(update.lookups.total, "group")}.`);
     if (!update.lookups && store.queue.lookups) announce("Lookups finished.");
+    // What is on screen in Preview must always match the queue it was built from. It is built
+    // from confirmed groups only, so it is built again when one is added, changed or removed,
+    // not for a lookup elsewhere in the queue.
+    const shown = new Set(confirmed().map((group) => group.key));
+    const affects =
+      !!update.order ||
+      update.groups.some((group) => group.status === "confirmed" || shown.has(group.key));
     applyQueueUpdate(store.queue, update);
-    // What is on screen in Preview must always match the queue it was built from.
-    if (store.page === "preview" && !store.applied) void loadPreview();
+    if (affects && store.page === "preview" && !store.applied) void loadPreview();
   });
   const loaded = await run(() => api.load());
   if (!loaded) return;

@@ -141,6 +141,12 @@ const entriesOf = async (dir: string) => {
     throw error;
   }
 };
+/**
+ * Lets other work run: timers, the window's requests. A loop over every file of a large
+ * library calls it every `YIELD_EVERY` files, so it never holds up the main process for long.
+ */
+const giveWay = () => new Promise<void>((resolve) => setImmediate(resolve));
+const YIELD_EVERY = 500;
 const fingerprint = (stat: Stats): Fingerprint => ({
   dev: stat.dev,
   ino: stat.ino,
@@ -160,6 +166,7 @@ export async function scanPaths(paths: string[]): Promise<ScanResult> {
   const files: MediaFile[] = [],
     unread: ScanResult["unread"] = [];
   const visited = new Set<string>();
+  const found = new Set<string>();
   /** Runs one read; a failure is noted against the path and the rest of the import carries on. */
   async function reading<T>(where: string, read: () => Promise<T>): Promise<T | undefined> {
     try {
@@ -196,15 +203,16 @@ export async function scanPaths(paths: string[]): Promise<ScanResult> {
       const parent = await reading(absolute, () => fs.realpath(path.dirname(absolute)));
       if (parent === undefined) return;
       const canonical = path.join(parent, path.basename(absolute));
-      if (!files.some((file) => file.path === canonical))
-        files.push({
-          id: randomUUID(),
-          path: canonical,
-          root,
-          name: path.basename(canonical),
-          size: stat.size,
-          parsed: parseMediaPath(canonical, root),
-        });
+      if (found.has(canonical)) return;
+      found.add(canonical);
+      files.push({
+        id: randomUUID(),
+        path: canonical,
+        root,
+        name: path.basename(canonical),
+        size: stat.size,
+        parsed: parseMediaPath(canonical, root),
+      });
     }
   }
   for (const input of paths) {
@@ -274,8 +282,9 @@ export async function createPlan(
     previews: Plan["previews"] = [],
     sourceChecks: Plan["sourceChecks"] = [],
     issues: Plan["issues"] = [];
-  // Folder listings as they will be once planned folders exist.
-  const listings = new Map<string, string[]>();
+  // Folder listings as they will be once planned folders exist, each name under its key, so
+  // a name is found without going through the folder: a large folder is read once per plan.
+  const listings = new Map<string, Map<string, string>>();
   const mkdirs = new Map<string, MkdirOperation>();
   type Changes = Plan["previews"][number]["changes"];
   // Per source folder: where its videos are going. Per artwork slot: what would be downloaded.
@@ -302,43 +311,99 @@ export async function createPlan(
   const unwritten: { target: string; media: Selection["media"]; changes: Changes }[] = [];
   const list = async (dir: string) => {
     let entries = listings.get(dir);
-    if (!entries) listings.set(dir, (entries = await entriesOf(dir)));
+    if (!entries) {
+      entries = new Map();
+      for (const name of await entriesOf(dir))
+        if (!entries.has(key(name))) entries.set(key(name), name);
+      listings.set(dir, entries);
+    }
     return entries;
   };
+  // Per source folder, read once: its subtitles and sidecars under the stem of the video each
+  // is named after. A file goes with the longest video name it starts with, so
+  // "Film-2-poster.jpg" belongs to "Film-2.mkv", not "Film.mkv".
+  type Companion = { name: string; ext: string; subtitle: boolean; sidecar: boolean };
+  const companions = new Map<string, Map<string, Companion[]>>();
+  async function companionsOf(dir: string) {
+    let owned = companions.get(dir);
+    if (owned) return owned;
+    const siblings = await fs.readdir(dir);
+    const videoStems = new Set(siblings.filter(isVideo).map(stemOf));
+    owned = new Map();
+    for (const name of siblings) {
+      const ext = path.extname(name).slice(1).toLowerCase();
+      const subtitle = SUBTITLE_EXTENSIONS.includes(ext);
+      const sidecar = SIDECAR_EXTENSIONS.includes(ext);
+      if (!subtitle && !sidecar) continue;
+      const stem = stemOf(name);
+      // The stem itself, then each shorter name it continues with "." (or "-" for a sidecar).
+      let owner = videoStems.has(stem) ? stem : null;
+      for (let at = stem.length - 1; !owner && at > 0; at--)
+        if ((stem[at] === "." || (sidecar && stem[at] === "-")) && videoStems.has(stem.slice(0, at)))
+          owner = stem.slice(0, at);
+      if (owner === null) continue;
+      const list = owned.get(owner) ?? [];
+      list.push({ name, ext, subtitle, sidecar });
+      owned.set(owner, list);
+    }
+    companions.set(dir, owned);
+    return owned;
+  }
   // Reuses an existing folder whose name differs only by case or Unicode form, so one
   // show never ends up split across two folders.
   async function resolveFolder(root: string, names: string[]) {
     let current = root;
     for (const name of names) {
       const siblings = await list(current);
-      const existing = siblings.find((entry) => key(entry) === key(name));
+      const existing = siblings.get(key(name));
       current = path.join(current, existing ?? name);
       if (mkdirs.has(key(current))) continue;
       if (existing) {
         if (!(await fs.lstat(current)).isDirectory())
           throw new Error(`A file is in the way of the folder "${name}".`);
       } else {
-        siblings.push(name);
-        listings.set(current, []);
+        siblings.set(key(name), name);
+        listings.set(current, new Map());
         mkdirs.set(key(current), { type: "mkdir", target: current });
       }
     }
     return current;
   }
+  // Each file's name, rendered once. Rendering is the costliest part of planning that does not
+  // wait on the disk, so it gives way to other work every so often.
+  const rendered = new Map<Selection, { segments: string[] } | { error: unknown }>();
+  for (const [index, selection] of selections.entries()) {
+    if (index && index % YIELD_EVERY === 0) await giveWay();
+    const { media } = selection;
+    try {
+      rendered.set(selection, {
+        segments: renderTemplate(
+          media.kind === "tv" ? templates.episode : templates.movie,
+          media,
+        ),
+      });
+    } catch (error) {
+      rendered.set(selection, { error });
+    }
+  }
+  /** A fresh copy of the selection's name, folders first; throws why it has none. */
+  const segmentsOf = (selection: Selection) => {
+    const result = rendered.get(selection)!;
+    if ("error" in result) throw result.error;
+    return [...result.segments];
+  };
   // An imported folder that is itself one title's folder is renamed to the title's name, not
   // given a second title folder inside it: every file added from it is going to that one
   // title, and the folder is already named after it. Maps each such folder to its new path.
   const titleRoots = new Map<string, string>();
   if (options.organize !== false) {
     const named = new Map<string, Set<string> | null>();
-    for (const { file, media, sourceRoot } of selections) {
+    for (const selection of selections) {
+      const { file, media, sourceRoot } = selection;
       if (named.get(file.root) === null) continue;
       let segments: string[];
       try {
-        segments = renderTemplate(
-          media.kind === "tv" ? templates.episode : templates.movie,
-          media,
-        );
+        segments = segmentsOf(selection);
       } catch {
         // Reported against the file below.
         continue;
@@ -363,7 +428,7 @@ export async function createPlan(
       if (
         claimed.has(key(target)) ||
         (key(name) !== key(path.basename(root)) &&
-          (await list(parent)).some((entry) => key(entry) === key(name)))
+          (await list(parent)).has(key(name)))
       )
         continue;
       claimed.add(key(target));
@@ -371,11 +436,9 @@ export async function createPlan(
     }
   }
   // Copies that would take the same name are told apart before anything is planned.
-  const versions = nameVersions(selections, ({ file, media }) => {
-    const segments = renderTemplate(
-      media.kind === "tv" ? templates.episode : templates.movie,
-      media,
-    );
+  const versions = nameVersions(selections, (selection) => {
+    const { file } = selection;
+    const segments = segmentsOf(selection);
     return options.organize === false
       ? path.join(path.dirname(file.path), segments.pop()!)
       : path.join(file.root, ...segments);
@@ -389,10 +452,7 @@ export async function createPlan(
         throw new Error("Only regular files can be processed.");
       sourceChecks.push({ source: file.path, fingerprint: fingerprint(stat) });
       const parent = path.dirname(file.path);
-      const segments = renderTemplate(
-        media.kind === "tv" ? templates.episode : templates.movie,
-        media,
-      );
+      const segments = segmentsOf(selection);
       const plainStem = segments.pop()!;
       const newStem = version ? safeName(`${plainStem} - ${version.label}`) : plainStem;
       const extension = path.extname(file.path).toLowerCase();
@@ -425,26 +485,11 @@ export async function createPlan(
       const oldStem = path.basename(file.path, path.extname(file.path));
       if (target !== file.path) {
         // Files named after the video travel with it: subtitles, its NFO, its artwork.
-        const siblings = await fs.readdir(parent);
-        const videoStems = siblings.filter(isVideo).map(stemOf);
-        for (const sibling of siblings) {
-          const ext = path.extname(sibling).slice(1).toLowerCase();
-          const subtitle = SUBTITLE_EXTENSIONS.includes(ext);
-          const sidecar = SIDECAR_EXTENSIONS.includes(ext);
+        const named = (await companionsOf(parent)).get(oldStem) ?? [];
+        for (const { name: sibling, ext, subtitle, sidecar } of named) {
           if (
             !(subtitle && options.subtitles !== false) &&
             !(sidecar && options.sidecars !== false)
-          )
-            continue;
-          const stem = stemOf(sibling);
-          const named = (video: string) =>
-            stem === video ||
-            stem.startsWith(`${video}.`) ||
-            (sidecar && stem.startsWith(`${video}-`));
-          // "Film-2-poster.jpg" belongs to "Film-2.mkv", not "Film.mkv".
-          if (
-            !named(oldStem) ||
-            videoStems.some((v) => v.length > oldStem.length && named(v))
           )
             continue;
           const arriving = path.join(folder, `${newStem}${sibling.slice(oldStem.length)}`);
@@ -474,7 +519,7 @@ export async function createPlan(
       if (
         options.nfo &&
         !version &&
-        !(await list(folder)).some((name) => key(name) === key(nfoName))
+        !(await list(folder)).has(key(nfoName))
       )
         unwritten.push({ target: path.join(folder, nfoName), media, changes });
       // Artwork belongs to a title's own folder, so it needs a template that makes one.
@@ -555,7 +600,7 @@ export async function createPlan(
         continue;
       const videos = await videosUnder(showDir);
       if (!videos || videos.some((video) => !show.planned.has(video))) continue;
-      const occupied = new Set((await list(title)).map(key));
+      const occupied = await list(title);
       for (const name of await fs.readdir(showDir)) {
         // Season artwork kept in the show folder goes too, unless the episodes are also
         // in this folder, in which case it follows them in the next step.
@@ -575,6 +620,7 @@ export async function createPlan(
   }
   // Artwork and NFO files that describe a whole folder (poster.jpg, movie.nfo, season01-poster.jpg)
   // follow its videos when all of them are going to the same place and none is staying behind.
+  const moving = new Set(operations.flatMap((op) => (op.type === "move" ? [op.source] : [])));
   if (options.sidecars !== false)
     for (const [dir, leaving] of departures) {
       const [destination] = leaving.folders;
@@ -591,15 +637,15 @@ export async function createPlan(
         continue;
       // A show's episodes land in a season folder, so only season artwork follows them there.
       const belongs = leaving.kinds.has("tv") ? SEASON_ASSET : FOLDER_ASSET;
-      const occupied = new Set((await list(destination)).map(key));
+      const occupied = await list(destination);
       for (const name of entries) {
         if (!belongs.test(name) || occupied.has(key(name))) continue;
         const source = path.join(dir, name);
-        if (operations.some((op) => op.type === "move" && op.source === source))
-          continue;
+        if (moving.has(source)) continue;
         try {
           const op = await moveOperation(source, path.join(destination, name));
           operations.push(op);
+          moving.add(source);
           leaving.changes.push({ source, target: op.target });
         } catch {
           // Not a regular file: leave it where it is.
@@ -607,15 +653,21 @@ export async function createPlan(
       }
     }
   const artwork = new Set<string>();
+  // What each folder will be given, by name.
+  const arrivals = new Map<string, string[]>();
+  const arrive = (op: Operation) => {
+    const folder = path.dirname(op.target);
+    const names = arrivals.get(folder) ?? [];
+    names.push(path.basename(op.target));
+    arrivals.set(folder, names);
+  };
+  operations.forEach(arrive);
   for (const { folder, stem, url, taken, changes } of wanted) {
     const slot = `${key(folder)}/${stem}`;
     if (!isArtworkUrl(url) || artwork.has(slot)) continue;
     artwork.add(slot);
     // Whatever artwork is there, or on its way there, stays; nothing is replaced.
-    const arriving = operations
-      .filter((op) => path.dirname(op.target) === folder)
-      .map((op) => path.basename(op.target));
-    const present = [...(await list(folder)), ...arriving].some(
+    const present = [...(await list(folder)).values(), ...(arrivals.get(folder) ?? [])].some(
       (name) =>
         IMAGE.test(name) && taken(name.replace(IMAGE, "").toLowerCase()),
     );
@@ -627,6 +679,7 @@ export async function createPlan(
       target: path.join(folder, stem + extension.toLowerCase()),
     };
     operations.push(op);
+    arrive(op);
     changes.push({ source: null, target: op.target, artwork: true });
   }
   const targets = new Map<string, Operation>(),
@@ -634,7 +687,8 @@ export async function createPlan(
   // Enough of a path to tell apart two files with the same name in different folders.
   const shortPath = (file: string) =>
     path.join(path.basename(path.dirname(file)), path.basename(file));
-  for (const op of operations) {
+  for (const [index, op] of operations.entries()) {
+    if (index && index % YIELD_EVERY === 0) await giveWay();
     try {
       const targetKey = key(op.target);
       const other = targets.get(targetKey);
@@ -650,8 +704,7 @@ export async function createPlan(
           throw new Error("A source file appears more than once.");
         sources.add(key(op.source));
       }
-      const siblings = await list(path.dirname(op.target));
-      if (siblings.some((name) => key(name) === key(path.basename(op.target))))
+      if ((await list(path.dirname(op.target))).has(key(path.basename(op.target))))
         throw new Error(
           "Destination already exists (including case-only or Unicode-equivalent names).",
         );
@@ -695,9 +748,17 @@ async function emptiedFolders(
   boundaries: string[],
 ): Promise<RmdirOperation[]> {
   const leaving = new Map<string, Set<string>>();
-  const receiving: string[] = [];
+  // Every folder something is moved or written into, and every folder above one.
+  const receiving = new Set<string>();
   for (const op of operations) {
-    receiving.push(key(path.dirname(op.target)) + path.sep);
+    for (
+      let dir = key(path.dirname(op.target));
+      !receiving.has(dir);
+      dir = path.dirname(dir)
+    ) {
+      receiving.add(dir);
+      if (path.dirname(dir) === dir) break;
+    }
     if (op.type !== "move") continue;
     const from = path.dirname(op.source);
     if (from === path.dirname(op.target)) continue;
@@ -706,10 +767,11 @@ async function emptiedFolders(
   }
   const removable = (dir: string) =>
     boundaries.some((root) => dir.startsWith(root + path.sep)) &&
-    !receiving.some((target) => target.startsWith(key(dir) + path.sep));
+    !receiving.has(key(dir));
   const removed = new Set<string>();
-  const pending = [...leaving.keys()];
   // Deepest first, so a parent is judged after the children that might empty it.
+  const deeper = (a: string, b: string) => b.length - a.length;
+  const pending = [...leaving.keys()].sort(deeper);
   for (let dir = pending.shift(); dir; dir = pending.shift()) {
     if (removed.has(dir) || !removable(dir)) continue;
     const moved = leaving.get(dir);
@@ -718,8 +780,16 @@ async function emptiedFolders(
     );
     if (left.length) continue;
     removed.add(dir);
-    pending.push(path.dirname(dir));
-    pending.sort((a, b) => b.length - a.length);
+    // Its parent, after every folder at least as deep.
+    const parent = path.dirname(dir);
+    let low = 0,
+      high = pending.length;
+    while (low < high) {
+      const middle = (low + high) >> 1;
+      if (pending[middle]!.length >= parent.length) low = middle + 1;
+      else high = middle;
+    }
+    pending.splice(low, 0, parent);
   }
   return [...removed]
     .sort((a, b) => b.length - a.length)
@@ -973,15 +1043,16 @@ async function checkPlan(plan: Plan, journalDir: string) {
     if (!same(await exists(check.source), check.fingerprint))
       throw new Error("A source changed. Generate a fresh preview.");
   }
+  // Each destination folder is read once, however many files go into it.
+  const listings = new Map<string, Set<string>>();
   for (const op of plan.operations) {
     if (op.type === "mkdir" || op.type === "rmdir") continue;
     if (op.type === "move" && !same(await exists(op.source), op.fingerprint))
       throw new Error("A source changed. Generate a fresh preview.");
-    if (
-      (await entriesOf(path.dirname(op.target))).some(
-        (name) => key(name) === key(path.basename(op.target)),
-      )
-    )
+    const folder = path.dirname(op.target);
+    let names = listings.get(folder);
+    if (!names) listings.set(folder, (names = new Set((await entriesOf(folder)).map(key))));
+    if (names.has(key(path.basename(op.target))))
       throw new Error("A destination now exists. Generate a fresh preview.");
   }
   const [blocked] = await checkRoom(plan, journalDir);
