@@ -168,7 +168,10 @@ test("a batch stopped during any move finishes that move, records the stop and i
       `move ${call}`,
     );
     const lines = await linesOf(lib.journal);
-    assert.deepEqual(JSON.parse(lines.at(-1)!), { type: "failed", message: STOPPED }, `move ${call}`);
+    // The stop names the last operation begun, so those announced after it read as not started.
+    const stop = JSON.parse(lines.at(-1)!);
+    assert.deepEqual({ ...stop, started: undefined }, { type: "failed", message: STOPPED, started: undefined }, `move ${call}`);
+    assert.equal(stop.started, Math.max(...lines.filter((line) => line.includes('"done"')).map((line) => JSON.parse(line).index)), `move ${call}`);
     // The move in hand was finished: its last record before the stop says it was done.
     assert.match(lines.at(-2)!, /"type":"done"/, `move ${call}`);
     const [summary] = await history(lib.journals);
@@ -367,4 +370,96 @@ test("a journal damaged in the middle is reported and left alone", async (t) => 
   await assert.rejects(undoBatch(lib.plan.id, lib.journals), /Journal is damaged/);
   assert.deepEqual(await snapshot(lib.dir), after);
   assert.equal(await fs.readFile(lib.journal, "utf8"), lines.join("\n") + "\n");
+});
+
+/** A season of `count` episodes in one folder, organised with NFO files: longer than one run of announcements. */
+async function season(t: TestContext, count: number) {
+  const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "organtic-")));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  await fs.mkdir(path.join(dir, "Severance.S01"));
+  const names = Array.from({ length: count }, (_, at) => `Severance.S01/Severance.S01E${String(at + 1).padStart(3, "0")}.mkv`);
+  for (const name of names) await fs.writeFile(path.join(dir, name), `bytes of ${name}`);
+  const { files } = await scanPaths([dir]);
+  const plan = await createPlan(
+    files.map((file, at) => ({ file, media: episode(at + 1, `Part ${at + 1}`) })),
+    { nfo: true },
+  );
+  assert.deepEqual(plan.errors, []);
+  const journals = path.join(dir, ".journals");
+  return { dir, plan, journals, journal: path.join(journals, `${plan.id}.jsonl`) };
+}
+
+test("a long batch announces its operations a run at a time and reports its progress", async (t) => {
+  const lib = await season(t, 100);
+  const total = lib.plan.operations.length;
+  assert.ok(total > 128, "the plan spans more than two runs");
+  const progress: number[] = [];
+  await applyPlan(lib.plan, lib.journals, fs, undefined, (done, of) => {
+    assert.equal(of, total);
+    progress.push(done);
+  });
+  // Reported at the start, then after every operation.
+  assert.deepEqual(progress, Array.from({ length: total + 1 }, (_, at) => at));
+  const records = (await linesOf(lib.journal)).slice(1).map((line) => JSON.parse(line));
+  // Each run is announced in full before its first operation is recorded as done.
+  for (const [at, record] of records.entries())
+    if (record.type === "done") {
+      const run = Math.floor(record.index / 64);
+      const last = Math.min(run * 64 + 63, total - 1);
+      assert.ok(records.slice(0, at).some((r) => r.type === "intent" && r.index === last), `operation ${record.index}`);
+      assert.ok(!records.slice(0, at).some((r) => r.type === "intent" && r.index > last), `operation ${record.index}`);
+    }
+  assert.deepEqual(records.at(-1), { type: "complete" });
+
+  const undone: number[] = [];
+  await undoBatch(lib.plan.id, lib.journals, fs, undefined, (done, of) => {
+    assert.equal(of, total);
+    undone.push(done);
+  });
+  assert.deepEqual(undone, Array.from({ length: total + 1 }, (_, at) => at));
+  assert.equal(await statusOf(lib.journals), "undone");
+});
+
+test("a long batch stopped at or around the end of a run shows the rest as not started and is undone exactly", async (t) => {
+  const count = moves((await season(t, 100)).plan);
+  for (const call of [0, 30, 31, 32, 33, 63, 64, count - 1]) {
+    const lib = await season(t, 100);
+    const before = await snapshot(lib.dir);
+    const controller = new AbortController();
+    // The NFO files are written after the last move, so even that stop leaves work undone.
+    await assert.rejects(
+      applyPlan(lib.plan, lib.journals, stoppingOn(call, controller), controller.signal),
+      /You stopped the batch\./,
+      `move ${call}`,
+    );
+    const [summary] = await history(lib.journals);
+    assert.ok(!summary?.operations.some((op) => op.outcome === "failed"), `move ${call}`);
+    assert.ok(summary?.operations.some((op) => op.outcome === "pending"), `move ${call}`);
+    await undoBatch(lib.plan.id, lib.journals);
+    assert.deepEqual(await snapshot(lib.dir), before, `move ${call}`);
+  }
+});
+
+test("a crash with a run announced and only part of it recorded is undone exactly", async (t) => {
+  const lib = await season(t, 60);
+  const before = await snapshot(lib.dir);
+  const total = lib.plan.operations.length;
+  for (const done of [1, 63, 64, 65, 100, total - 1]) {
+    // Carry out the first `done` operations, then leave the journal as a crash would: the whole
+    // run announced, and the last few records that had not reached the disk lost.
+    const part = { ...lib.plan, operations: lib.plan.operations.slice(0, done) };
+    await applyPlan(part, lib.journals);
+    const [, ...records] = await linesOf(lib.journal);
+    assert.equal(records.pop(), JSON.stringify({ type: "complete" }));
+    const runEnd = Math.min(Math.ceil(done / 64) * 64, total);
+    const announced = new Set(records.filter((line) => line.includes('"intent"')));
+    for (let index = 0; index < runEnd; index++) announced.add(JSON.stringify({ type: "intent", index }));
+    const lost = records.filter((line) => line.includes('"done"')).slice(-3);
+    const kept = [...announced, ...records.filter((line) => !line.includes('"intent"') && !lost.includes(line))];
+    await fs.writeFile(lib.journal, [JSON.stringify({ type: "plan", plan: lib.plan }), ...kept].join("\n") + "\n");
+    assert.equal(await statusOf(lib.journals), "interrupted", `${done} done`);
+    await undoBatch(lib.plan.id, lib.journals);
+    assert.deepEqual(await snapshot(lib.dir), before, `${done} done`);
+    await fs.rm(lib.journals, { recursive: true });
+  }
 });

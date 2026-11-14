@@ -14,6 +14,7 @@ import type {
   Operation,
   Plan,
   QueueUpdate,
+  BatchProgress,
   Selection,
   SourcesState,
 } from "../core/types.ts";
@@ -247,7 +248,37 @@ const planner: Planner = {
       issues,
     };
   },
-  async applyPlan(plan) {
+  async applyPlan(plan, signal, onProgress) {
+    // Nothing is moved here, but the batch takes long enough to watch its progress and stop it.
+    const total = plan.operations.length;
+    const step = Math.max(1, Math.ceil(total / 60));
+    // About three seconds in all, however many operations.
+    const pause = Math.max(50, 3000 / Math.ceil(total / step));
+    let done = 0;
+    onProgress?.(0, total);
+    for (; done < total; done = Math.min(total, done + step)) {
+      if (signal?.aborted) break;
+      await new Promise((resolve) => setTimeout(resolve, pause));
+      onProgress?.(Math.min(total, done + step), total);
+    }
+    if (done < total) {
+      batches.unshift({
+        id: plan.id,
+        createdAt: plan.createdAt,
+        count: total,
+        status: "interrupted",
+        stopped: "You stopped the batch.",
+        operations: plan.operations.map((op, index) => ({
+          type: op.type,
+          source: op.type === "move" || op.type === "rename" ? op.source : undefined,
+          target: op.target,
+          outcome: index < done ? ("done" as const) : ("pending" as const),
+        })),
+      });
+      throw new Error(
+        `Stopped after ${done} operations: You stopped the batch. Open History to review or undo this batch.`,
+      );
+    }
     batches.unshift({
       id: plan.id,
       createdAt: plan.createdAt,
@@ -298,6 +329,11 @@ const batches: BatchSummary[] = [
   },
 ];
 const listeners: ((update: QueueUpdate) => void)[] = [];
+const progressListeners: ((progress: BatchProgress) => void)[] = [];
+const reportProgress = (kind: BatchProgress["kind"]) => (done: number, total: number) =>
+  progressListeners.forEach((listener) => listener({ kind, done, total }));
+/** Stops the batch or undo running in the preview. */
+let stopRunning = () => {};
 const providers = new Providers({ fetcher: catalogue });
 providers.setToken("example");
 let settings = DEFAULT_SETTINGS;
@@ -330,6 +366,8 @@ export const demoApi: MediaApi = {
     };
   },
   onQueue: (listener) => void listeners.push(listener),
+  onProgress: (listener) => void progressListeners.push(listener),
+  stop: async () => stopRunning(),
   // The preview keeps no log.
   showLog: async () => {},
   addFiles: addExamples,
@@ -351,11 +389,34 @@ export const demoApi: MediaApi = {
   chooseDestination: async (key) => session.setDestination(key, `${ROOT}/Library`),
   resetDestination: async (key) => session.setDestination(key, null),
   preview: () => session.preview(),
-  apply: (planId) => session.apply(planId),
+  async apply(planId) {
+    const controller = new AbortController();
+    stopRunning = () => controller.abort();
+    try {
+      return await session.apply(planId, controller.signal, reportProgress("apply"));
+    } finally {
+      stopRunning = () => {};
+    }
+  },
   history: async () => structuredClone(batches),
   async undo(batchId) {
     const batch = batches.find((item) => item.id === batchId);
-    if (batch) batch.status = "undone";
+    if (!batch) return {};
+    const progress = reportProgress("undo");
+    const total = batch.operations.filter((op) => op.outcome !== "pending").length;
+    const controller = new AbortController();
+    stopRunning = () => controller.abort();
+    try {
+      for (let done = 0; done <= total; done++) {
+        if (controller.signal.aborted)
+          throw new Error("You stopped the undo part-way. Undo the batch again from History to put back the rest.");
+        progress(done, total);
+        if (done < total) await new Promise((resolve) => setTimeout(resolve, 300));
+      }
+    } finally {
+      stopRunning = () => {};
+    }
+    batch.status = "undone";
     return {};
   },
   async saveSettings(input) {

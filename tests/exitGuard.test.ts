@@ -142,3 +142,21 @@ test("a question that cannot be shown keeps the app open", async () => {
   await running;
   assert.deepEqual(exits, []);
 });
+
+test("Stop in the window stops the running batch without closing anything, and does nothing when none runs", async () => {
+  const { guard, exits, start, signal, finish, asked } = setup();
+  guard.stop();
+  const running = start("undo");
+  assert.equal(signal().aborted, false);
+  guard.stop();
+  assert.equal(signal().aborted, true);
+  await finish();
+  assert.equal(await running, "finished");
+  assert.deepEqual(exits, []);
+  assert.deepEqual(asked, []);
+  // The next batch starts with a fresh signal.
+  const next = start();
+  assert.equal(signal().aborted, false);
+  await finish();
+  await next;
+});

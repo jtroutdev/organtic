@@ -233,7 +233,19 @@ export type JournalEvent =
   | { type: "done"; index: number; size?: number }
   | { type: "skipped"; index: number; message: string }
   | { type: "complete" | "undone" }
-  | { type: "failed"; message: string };
+  /**
+   * `started` is the last operation begun, when known: operations are announced in runs, so
+   * any announced after it never began. Records without it come from before that change.
+   */
+  | { type: "failed"; message: string; started?: number };
+
+/** How far the running batch, or the running undo, has got. */
+export interface BatchProgress {
+  kind: "apply" | "undo";
+  /** Operations finished, of `total`. */
+  done: number;
+  total: number;
+}
 
 export type BatchStatus = "complete" | "interrupted" | "undone" | "damaged";
 
