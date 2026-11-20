@@ -172,7 +172,7 @@ Closing the window or quitting while a batch is being applied or undone asks fir
 
 ### History and Settings
 
-**History** lists every batch and can undo it. For a batch that stopped, it shows what became of each change (done, failed, skipped or not started), with the reason it stopped given once at the top. A batch the app died in is told apart from one that failed.
+**History** lists every batch and can undo it. For a batch that stopped, it shows what became of each change (done, failed, skipped or not started), with the reason it stopped given once at the top. A batch the app died in is told apart from one that failed. A batch that finished, or has been undone, can be removed with **Remove from History** once you no longer need to undo it; this asks first, deletes only the app's record of the batch and moves no file. A batch that stopped part-way stays until it has been undone, and an unreadable record is left for recovery by hand.
 
 <p align="center">
   <img src="docs/screenshots/history.png" width="900" alt="History: a batch that stopped when the disk filled, with each change marked done, skipped, failed or not started">

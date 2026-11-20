@@ -4,6 +4,7 @@ import { applyQueueUpdate } from "../core/queueUpdate.ts";
 import { DEFAULT_SETTINGS } from "../core/settings.ts";
 import type {
   AppSettings,
+  BatchChange,
   BatchProgress,
   BatchSummary,
   GroupStatus,
@@ -57,6 +58,9 @@ export const store = reactive({
   } | null,
   batches: [] as BatchSummary[],
   batchSelected: null as string | null,
+  /** The changes of the batch named by `changesOf`, loaded when it is selected. */
+  changes: null as BatchChange[] | null,
+  changesOf: null as string | null,
   section: "naming",
   error: "",
   /** The latest outcome, read out by screen readers without moving focus. */
@@ -125,16 +129,20 @@ export async function confirmAndNext() {
 }
 
 /** Runs one user action: shows it as busy and turns a failure into a message on screen. */
+/** An error's message, without the wrapping Electron adds on its way from the desktop process. */
+const messageOf = (error: unknown) =>
+  (error instanceof Error ? error.message : String(error)).replace(
+    /^Error invoking remote method '[^']+': (?:Error: )?/,
+    "",
+  );
+
 export async function run<T>(action: () => Promise<T>): Promise<T | undefined> {
   store.busy = true;
   store.error = "";
   try {
     return await action();
   } catch (error) {
-    store.error = (error instanceof Error ? error.message : String(error)).replace(
-      /^Error invoking remote method '[^']+': (?:Error: )?/,
-      "",
-    );
+    store.error = messageOf(error);
     return undefined;
   } finally {
     store.busy = false;
@@ -182,6 +190,31 @@ async function loadPreview() {
 
 export async function loadHistory() {
   store.batches = (await run(() => api.history())) ?? [];
+  const kept = store.batches.find((batch) => batch.id === store.batchSelected);
+  // The batch on screen may have changed since, so its changes are read again.
+  store.changesOf = null;
+  await showBatch((kept ?? store.batches[0])?.id);
+}
+
+let changesWanted: string | undefined;
+/** Selects a batch in History and loads its changes, unless they are on screen already. */
+export async function showBatch(id: string | undefined) {
+  store.batchSelected = id ?? null;
+  if (!id || store.changesOf === id) return;
+  changesWanted = id;
+  store.changes = null;
+  store.changesOf = null;
+  // An unreadable record has no changes to show.
+  if (store.batches.find((batch) => batch.id === id)?.status === "damaged") return;
+  try {
+    const changes = await api.batch(id);
+    // Another batch was chosen while this one loaded.
+    if (changesWanted !== id) return;
+    store.changes = changes;
+    store.changesOf = id;
+  } catch (error) {
+    if (changesWanted === id) store.error = messageOf(error);
+  }
 }
 
 export async function go(page: Page) {

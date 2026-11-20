@@ -20,7 +20,7 @@ import os from "node:os";
 import path from "node:path";
 import { monitorEventLoopDelay, performance } from "node:perf_hooks";
 import { parseArgs } from "node:util";
-import { applyPlan, checkRoom, createPlan, history, scanPaths, undoBatch } from "../core/files.ts";
+import { applyPlan, batchChanges, checkRoom, createPlan, history, scanPaths, undoBatch } from "../core/files.ts";
 import { Providers } from "../core/providers.ts";
 import { Session } from "../core/session.ts";
 import { DEFAULT_SETTINGS } from "../core/settings.ts";
@@ -175,9 +175,14 @@ async function run(library: Library, base: string) {
     if (preview.value.errors?.length)
       throw new Error(`Preview found problems: ${preview.value.errors.slice(0, 3).join(" ")}`);
     const applied = await phase(() => session.apply(preview.value.id));
-    const listed = await phase(() => history(journalDir));
-    const batch = listed.value[0];
-    if (!batch) throw new Error("The batch is not in History.");
+    // Opening History: the list, then the changes of the batch it selects.
+    const listed = await phase(async () => {
+      const [first] = await history(journalDir);
+      if (!first) throw new Error("The batch is not in History.");
+      await batchChanges(first.id, journalDir);
+      return first;
+    });
+    const batch = listed.value;
     const undone = await phase(() => undoBatch(batch.id, journalDir));
 
     return {

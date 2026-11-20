@@ -7,7 +7,10 @@ import { VIDEO_EXTENSIONS, SUBTITLE_EXTENSIONS, makeNfo } from "./media.ts";
 import { normalizeTitle, parseMediaPath, parseStem } from "./parse.ts";
 import { nameVersions } from "./versions.ts";
 import { PLEX_TEMPLATES, renderTemplate, safeName } from "./naming.ts";
+import { commonFolder } from "./paths.ts";
 import type {
+  BatchChange,
+  BatchStatus,
   BatchSummary,
   Fingerprint,
   JournalEvent,
@@ -1259,64 +1262,141 @@ async function readJournal(file: string, repairTail = false) {
 const indexesOf = (events: JournalEvent[], type: "intent" | "undo-done") =>
   new Set(events.flatMap((e) => (e.type === type ? [e.index] : [])));
 
-export async function history(journalDir: string): Promise<BatchSummary[]> {
+const BATCH_ID = /^[a-f0-9-]{36}$/;
+const journalOf = (id: string, journalDir: string) => {
+  if (!BATCH_ID.test(id)) throw new Error("Invalid batch.");
+  return path.join(journalDir, `${id}.jsonl`);
+};
+
+/**
+ * Reads one record and works out, in a single pass over its events, how the batch ended and
+ * what became of each operation.
+ */
+async function readBatch(file: string) {
+  const { plan, events } = await readJournal(file);
+  const count = plan.operations.length;
+  const started = new Uint8Array(count);
+  // The last completion or skip recorded for each operation.
+  const last: (JournalEvent & { type: "done" | "skipped" })[] = new Array(count);
+  let finished = false;
+  let undone = false;
+  let failed: (JournalEvent & { type: "failed" }) | undefined;
+  for (const event of events) {
+    if (event.type === "intent") started[event.index] = 1;
+    else if (event.type === "done" || event.type === "skipped") last[event.index] = event;
+    else if (event.type === "complete") finished = true;
+    else if (event.type === "undone") undone = true;
+    else if (event.type === "failed") failed ??= event;
+  }
+  // Without a recorded failure the app itself stopped: closed, crashed, or lost power.
+  const stopped = finished
+    ? undefined
+    : (failed?.message ?? "The app closed before the batch finished.");
+  const outcomeOf = (index: number): Pick<BatchChange, "outcome" | "message"> => {
+    const recorded = last[index];
+    if (recorded?.type === "done") return { outcome: "done" };
+    if (recorded?.type === "skipped") return { outcome: "skipped", message: recorded.message };
+    if (!started[index]) return { outcome: "pending" };
+    // Announced with others but never begun: the batch stopped before reaching it.
+    if (failed?.started !== undefined && index > failed.started) return { outcome: "pending" };
+    return { outcome: "failed", message: stopped ?? "" };
+  };
+  const status: BatchStatus = undone ? "undone" : finished ? "complete" : "interrupted";
+  return { plan, status, stopped, outcomeOf };
+}
+
+const sourceOf = (op: Operation) =>
+  op.type === "move" || op.type === "rename" ? op.source : undefined;
+
+/** What `history` remembers of each record between calls, so an unchanged one is not read again. */
+export type HistoryCache = Map<string, { stamp: string; summary: BatchSummary }>;
+
+/**
+ * Every batch, newest first, without its changes: `batchChanges` loads those for one batch.
+ * Pass the same `cache` each time to read only the records that changed since.
+ */
+export async function history(
+  journalDir: string,
+  cache: HistoryCache = new Map(),
+): Promise<BatchSummary[]> {
   await fs.mkdir(journalDir, { recursive: true, mode: 0o700 });
+  const names = (await fs.readdir(journalDir)).filter((name) => name.endsWith(".jsonl"));
+  for (const name of cache.keys()) if (!names.includes(name)) cache.delete(name);
   const result: BatchSummary[] = [];
-  for (const name of (await fs.readdir(journalDir)).filter((name) =>
-    name.endsWith(".jsonl"),
-  )) {
+  for (const name of names) {
+    const file = path.join(journalDir, name);
+    const stat = await fs.stat(file).catch(() => undefined);
+    if (!stat) continue;
+    const stamp = `${stat.mtimeMs}:${stat.size}`;
+    const cached = cache.get(name);
+    if (cached?.stamp === stamp) {
+      result.push(cached.summary);
+      continue;
+    }
+    let summary: BatchSummary;
     try {
-      const { plan, events } = await readJournal(path.join(journalDir, name));
-      const finished = events.some((e) => e.type === "complete");
-      const failed = events.find((e) => e.type === "failed");
-      // Without a recorded failure the app itself stopped: closed, crashed, or lost power.
-      const stop = finished
-        ? undefined
-        : failed?.type === "failed"
-          ? failed.message
-          : "The app closed before the batch finished.";
-      const started = indexesOf(events, "intent");
-      const outcomeOf = (index: number): Pick<BatchSummary["operations"][number], "outcome" | "message"> => {
-        const last = events.findLast(
-          (e) => (e.type === "done" || e.type === "skipped") && e.index === index,
-        );
-        if (last?.type === "done") return { outcome: "done" };
-        if (last?.type === "skipped") return { outcome: "skipped", message: last.message };
-        if (!started.has(index)) return { outcome: "pending" };
-        // Announced with others but never begun: the batch stopped before reaching it.
-        if (failed?.type === "failed" && failed.started !== undefined && index > failed.started)
-          return { outcome: "pending" };
-        return { outcome: "failed", message: stop ?? "" };
-      };
-      result.push({
+      const { plan, status, stopped, outcomeOf } = await readBatch(file);
+      const outcomes: BatchSummary["outcomes"] = {};
+      const paths: string[] = [];
+      for (const [index, op] of plan.operations.entries()) {
+        const { outcome } = outcomeOf(index);
+        outcomes[outcome] = (outcomes[outcome] ?? 0) + 1;
+        const source = sourceOf(op);
+        if (source) paths.push(source);
+        paths.push(op.target);
+      }
+      summary = {
         id: plan.id,
         createdAt: plan.createdAt,
         count: plan.operations.length,
-        status: events.some((e) => e.type === "undone")
-          ? "undone"
-          : finished
-            ? "complete"
-            : "interrupted",
-        ...(stop === undefined ? {} : { stopped: stop }),
-        operations: plan.operations.map((op, index) => ({
-          source:
-            op.type === "move" || op.type === "rename" ? op.source : undefined,
-          target: op.target,
-          type: op.type,
-          ...outcomeOf(index),
-        })),
-      });
+        status,
+        ...(stopped === undefined ? {} : { stopped }),
+        outcomes,
+        root: commonFolder(paths),
+      };
     } catch {
-      result.push({
+      summary = {
         id: name.replace(".jsonl", ""),
         status: "damaged",
         count: 0,
         createdAt: "",
-        operations: [],
-      });
+        outcomes: {},
+        root: "",
+      };
     }
+    cache.set(name, { stamp, summary });
+    result.push(summary);
   }
   return result.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+/** What became of each operation of one batch, in the order they were planned. */
+export async function batchChanges(id: string, journalDir: string): Promise<BatchChange[]> {
+  const { plan, outcomeOf } = await readBatch(journalOf(id, journalDir));
+  return plan.operations.map((op, index) => {
+    const source = sourceOf(op);
+    return {
+      type: op.type,
+      ...(source === undefined ? {} : { source }),
+      target: op.target,
+      ...outcomeOf(index),
+    };
+  });
+}
+
+/**
+ * Removes a finished or undone batch's record, after which it can no longer be undone. An
+ * interrupted batch is kept until it has been put back, and an unreadable one is left alone
+ * for whoever recovers it by hand.
+ */
+export async function removeBatch(id: string, journalDir: string) {
+  const file = journalOf(id, journalDir);
+  const { status } = await readBatch(file);
+  if (status === "interrupted")
+    throw new Error(
+      "This batch stopped part-way. Undo it first, so the files it moved can still be put back.",
+    );
+  await fs.unlink(file);
 }
 
 /**
@@ -1330,8 +1410,7 @@ export async function undoBatch(
   signal?: AbortSignal,
   onProgress?: Progress,
 ) {
-  if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error("Invalid batch.");
-  const file = path.join(journalDir, `${id}.jsonl`);
+  const file = journalOf(id, journalDir);
   const { plan, events } = await readJournal(file, true);
   if (events.some((e) => e.type === "undone"))
     throw new Error("This batch has already been undone.");

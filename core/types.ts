@@ -249,6 +249,20 @@ export interface BatchProgress {
 
 export type BatchStatus = "complete" | "interrupted" | "undone" | "damaged";
 
+/** `skipped` is artwork or a folder name the batch went on without; `pending` was never started. */
+export type ChangeOutcome = "done" | "failed" | "skipped" | "pending";
+
+/** One operation of a batch, as History shows it. */
+export interface BatchChange {
+  type: Operation["type"];
+  source?: string;
+  target: string;
+  outcome: ChangeOutcome;
+  /** Why a change failed or was skipped. */
+  message?: string;
+}
+
+/** A batch as History lists it. Its changes are loaded on their own, when it is selected. */
 export interface BatchSummary {
   id: string;
   createdAt: string;
@@ -256,15 +270,10 @@ export interface BatchSummary {
   status: BatchStatus;
   /** Why an interrupted batch stopped. */
   stopped?: string;
-  operations: {
-    type: Operation["type"];
-    source?: string;
-    target: string;
-    /** `skipped` is artwork or a folder name the batch went on without; `pending` was never started. */
-    outcome: "done" | "failed" | "skipped" | "pending";
-    /** Why a change failed or was skipped. */
-    message?: string;
-  }[];
+  /** How many changes ended each way; outcomes with none are left out. */
+  outcomes: Partial<Record<ChangeOutcome, number>>;
+  /** The folder every change happened in, or "" when they share only the disk root. */
+  root: string;
 }
 
 export interface ScanResult {

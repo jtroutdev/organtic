@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { vTip } from "../tip.ts";
 import IssueText from "./IssueText.vue";
+import SkeletonBlock from "./SkeletonBlock.vue";
 import StatusPill from "./StatusPill.vue";
 
 defineProps<{
-  /** What was there before, or what kind of change it is. */
-  before: string;
+  /** What was there before, or what kind of change it is. Without `after`, the row is still loading. */
+  before?: string;
   beforeTip?: string;
-  after: string;
+  after?: string;
   afterTip?: string;
   /** `before` is the old name of `after`. */
   renamed?: boolean;
@@ -20,7 +21,10 @@ defineProps<{
 
 <!-- What a batch did to one file: before and after side by side. -->
 <template>
-  <div class="mono oprow" :class="{ told: outcome }">
+  <div v-if="after === undefined" class="mono oprow">
+    <SkeletonBlock width="long" /><SkeletonBlock width="long" />
+  </div>
+  <div v-else class="mono oprow" :class="{ told: outcome }">
     <span v-tip="beforeTip" class="muted">{{ before }}</span
     ><span v-tip="afterTip"><span v-if="renamed" class="sr-only">became </span>{{ after }}</span>
     <StatusPill v-if="outcome" :tone="outcome[0]">{{ outcome[1] }}</StatusPill>

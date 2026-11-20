@@ -177,8 +177,8 @@ test("a batch stopped during any move finishes that move, records the stop and i
     const [summary] = await history(lib.journals);
     assert.equal(summary?.status, "interrupted", `move ${call}`);
     assert.equal(summary?.stopped, STOPPED, `move ${call}`);
-    assert.ok(summary?.operations.some((op) => op.outcome === "pending"), `move ${call} left nothing unstarted`);
-    assert.ok(!summary?.operations.some((op) => op.outcome === "failed"), `move ${call}`);
+    assert.ok(summary?.outcomes.pending, `move ${call} left nothing unstarted`);
+    assert.ok(!summary?.outcomes.failed, `move ${call}`);
     await undoBatch(lib.plan.id, lib.journals);
     assert.deepEqual(await snapshot(lib.dir), before, `move ${call}`);
     assert.equal(await statusOf(lib.journals), "undone", `move ${call}`);
@@ -433,8 +433,8 @@ test("a long batch stopped at or around the end of a run shows the rest as not s
       `move ${call}`,
     );
     const [summary] = await history(lib.journals);
-    assert.ok(!summary?.operations.some((op) => op.outcome === "failed"), `move ${call}`);
-    assert.ok(summary?.operations.some((op) => op.outcome === "pending"), `move ${call}`);
+    assert.ok(!summary?.outcomes.failed, `move ${call}`);
+    assert.ok(summary?.outcomes.pending, `move ${call}`);
     await undoBatch(lib.plan.id, lib.journals);
     assert.deepEqual(await snapshot(lib.dir), before, `move ${call}`);
   }
