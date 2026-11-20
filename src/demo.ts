@@ -8,7 +8,9 @@ import { Session } from "../core/session.ts";
 import { nameVersions } from "../core/versions.ts";
 import type { Planner } from "../core/session.ts";
 import { DEFAULT_SETTINGS, mergeSettings } from "../core/settings.ts";
+import { commonFolder } from "../core/paths.ts";
 import type {
+  BatchChange,
   BatchSummary,
   MediaFile,
   Operation,
@@ -297,7 +299,15 @@ const planner: Planner = {
 
 // One batch that stopped part-way, so History has every outcome to show.
 const STOPPED = `${ROOT}/Fargo (1996)`;
-const batches: BatchSummary[] = [
+type DemoBatch = Omit<BatchSummary, "outcomes" | "root"> & { operations: BatchChange[] };
+/** A batch as History lists it, worked out as the desktop app does from its record. */
+const summarise = ({ operations, ...batch }: DemoBatch): BatchSummary => {
+  const outcomes: BatchSummary["outcomes"] = {};
+  for (const op of operations) outcomes[op.outcome] = (outcomes[op.outcome] ?? 0) + 1;
+  const root = commonFolder(operations.flatMap((op) => (op.source ? [op.source, op.target] : [op.target])));
+  return { ...batch, outcomes, root };
+};
+const batches: DemoBatch[] = [
   {
     id: "example-interrupted",
     createdAt: "2026-10-10T19:42:00.000Z",
@@ -398,7 +408,18 @@ export const demoApi: MediaApi = {
       stopRunning = () => {};
     }
   },
-  history: async () => structuredClone(batches),
+  history: async () => batches.map(summarise),
+  async batch(batchId) {
+    // As long as reading a record from disk might take, so the wait can be seen.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    return structuredClone(batches.find((item) => item.id === batchId)?.operations ?? []);
+  },
+  // The desktop app asks first; the preview removes at once.
+  async removeBatch(batchId) {
+    const index = batches.findIndex((item) => item.id === batchId);
+    if (index >= 0) batches.splice(index, 1);
+    return {};
+  },
   async undo(batchId) {
     const batch = batches.find((item) => item.id === batchId);
     if (!batch) return {};

@@ -18,10 +18,13 @@ import {
   createPlan,
   applyPlan,
   checkRoom,
+  batchChanges,
   history,
   onSameDrive,
+  removeBatch,
   undoBatch,
 } from "../core/files.ts";
+import type { HistoryCache } from "../core/files.ts";
 import { Session } from "../core/session.ts";
 import { AppLog } from "./appLog.ts";
 import { ExitGuard } from "./exitGuard.ts";
@@ -353,7 +356,23 @@ async function start() {
       return await session.apply(id, signal, progressOf("apply"));
     }),
   );
-  register("history", () => history(journalDir));
+  // Records that have not changed since History last opened are not read again.
+  const historyCache: HistoryCache = new Map();
+  register("history", () => history(journalDir, historyCache));
+  register("batch", (id) => batchChanges(String(id), journalDir));
+  register("removeBatch", async (id) => {
+    if (guard.busy)
+      throw new Error("A batch is running. Remove this one once it has finished.");
+    const confirmed = await confirmDialog(
+      "Remove this batch from History?",
+      "Remove the record of this batch?",
+      "It can no longer be undone from Organtic. No media file is moved or changed.",
+      "Remove from History",
+    );
+    if (!confirmed) return { canceled: true };
+    await removeBatch(String(id), journalDir);
+    return {};
+  });
   register("undo", (id) =>
     guard.run("undo", async (signal) => {
       const confirmed = await confirmDialog(

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { commonFolder } from "../../core/paths.ts";
-import type { BatchStatus } from "../../core/types.ts";
+import type { BatchChange, BatchStatus, ChangeOutcome } from "../../core/types.ts";
 import ActionButton from "../components/ActionButton.vue";
 import ChangeRow from "../components/ChangeRow.vue";
 import ListItem from "../components/ListItem.vue";
@@ -10,7 +9,19 @@ import PageHeading from "../components/PageHeading.vue";
 import SplitView from "../components/SplitView.vue";
 import StatusPill from "../components/StatusPill.vue";
 import SurfaceCard from "../components/SurfaceCard.vue";
-import { announce, api, loadHistory, plural, resume, resumeLabel, run, stop, store } from "../store.ts";
+import { focusOn } from "../focus.ts";
+import {
+  announce,
+  api,
+  loadHistory,
+  plural,
+  resume,
+  resumeLabel,
+  run,
+  showBatch,
+  stop,
+  store,
+} from "../store.ts";
 
 const STATUS: Record<BatchStatus, [tone: string, label: string]> = {
   complete: ["ok", "Complete"],
@@ -25,13 +36,13 @@ const batch = computed(
     store.batches[0],
 );
 // Paths are shown from the folder the whole batch happened in, which is named once.
-const root = computed(() =>
-  commonFolder(
-    (batch.value?.operations ?? []).flatMap((op) =>
-      op.source ? [op.source, op.target] : [op.target],
-    ),
-  ),
+const root = computed(() => batch.value?.root ?? "");
+/** The selected batch's changes, or null while they load. */
+const changes = computed(() =>
+  store.changesOf === batch.value?.id ? store.changes : null,
 );
+// Rows that stand in while the changes load: as many as there will be, up to a screenful.
+const LOADING = 8;
 const short = (path: string) =>
   root.value && path.startsWith(root.value) ? path.slice(root.value.length) : path;
 /** A message with its paths shortened the same way. */
@@ -42,26 +53,25 @@ const KINDS = {
   rmdir: "removed empty folder",
   download: "downloaded artwork",
 };
-type Change = (typeof store.batches)[number]["operations"][number];
-const OUTCOME: Record<Change["outcome"], [tone: string, label: string]> = {
+const OUTCOME: Record<ChangeOutcome, [tone: string, label: string]> = {
   done: ["ok", "Done"],
   failed: ["bad", "Failed"],
   skipped: ["warn", "Skipped"],
   pending: ["off", "Not started"],
 };
 // A batch where everything went through has nothing to tell apart, so its rows stay plain.
-const mixed = computed(
-  () => batch.value?.operations.some((op) => op.outcome !== "done") ?? false,
+const mixed = computed(() =>
+  Object.entries(batch.value?.outcomes ?? {}).some(([outcome, count]) => outcome !== "done" && count),
 );
 const tally = computed(() => {
-  const counts = Object.groupBy(batch.value?.operations ?? [], (op) => op.outcome);
+  const counts = batch.value?.outcomes ?? {};
   return (["done", "failed", "skipped", "pending"] as const)
-    .filter((outcome) => counts[outcome]?.length)
-    .map((outcome) => `${counts[outcome]!.length} ${OUTCOME[outcome][1].toLowerCase()}`)
+    .filter((outcome) => counts[outcome])
+    .map((outcome) => `${counts[outcome]} ${OUTCOME[outcome][1].toLowerCase()}`)
     .join(", ");
 });
 // The reason is given once, in the banner; the row that failed carries it only if it differs.
-const reasonOf = (op: Change) =>
+const reasonOf = (op: BatchChange) =>
   op.message && op.message !== batch.value?.stopped ? within(op.message) : undefined;
 const when = (value: string) =>
   value ? new Date(value).toLocaleString() : "Unreadable record";
@@ -76,6 +86,14 @@ async function undo(id: string) {
   }
   await loadHistory();
   if (result && !result.canceled) announce("Batch undone.");
+}
+async function remove(id: string) {
+  const result = await run(() => api.removeBatch(id));
+  if (!result || result.canceled) return;
+  await loadHistory();
+  announce("Batch removed from History.");
+  // The button pressed is gone: focus goes to the batch now selected, or the page.
+  await focusOn(store.batches.length ? '.item[aria-current="true"]' : "#content");
 }
 </script>
 
@@ -105,7 +123,7 @@ async function undo(id: string) {
           :note="STATUS[item.status][1]"
           :count="item.count"
           unit="operations"
-          @click="store.batchSelected = item.id"
+          @click="showBatch(item.id)"
         >
           {{ when(item.createdAt) }}
         </ListItem>
@@ -128,10 +146,13 @@ async function undo(id: string) {
         >This record could not be read, so the batch cannot be undone from
         here.</NoticeBanner
       >
-      <div v-if="batch.operations.length" class="fill">
+      <div v-if="batch.count" class="fill">
         <h3 class="label">What changed</h3>
-        <div class="scroll">
-          <template v-for="(op, index) in batch.operations.slice(0, LIMIT)" :key="index">
+        <div v-if="!changes" class="scroll" aria-busy="true">
+          <ChangeRow v-for="index in Math.min(batch.count, LOADING)" :key="index" />
+        </div>
+        <div v-else class="scroll">
+          <template v-for="(op, index) in changes.slice(0, LIMIT)" :key="index">
             <ChangeRow
               v-if="op.type === 'move' || op.type === 'rename'"
               :before="short(op.source ?? '')"
@@ -151,35 +172,44 @@ async function undo(id: string) {
               :reason="reasonOf(op)"
             />
           </template>
-          <p v-if="batch.operations.length > LIMIT" class="muted more">
-            and {{ batch.operations.length - LIMIT }} more
+          <p v-if="changes.length > LIMIT" class="muted more">
+            and {{ changes.length - LIMIT }} more
           </p>
         </div>
       </div>
-      <div class="row">
-        <span v-if="batch.status === 'undone'" class="muted"
-          >The original names were restored.</span
-        >
-        <template v-else-if="batch.status !== 'damaged'">
-          <ActionButton variant="primary" :disabled="store.busy" @click="undo(batch.id)">
-            {{
-              batch.status === "interrupted"
-                ? "Put the moved files back"
-                : "Undo this batch"
-            }}
-          </ActionButton>
-          <template v-if="undoing">
-            <span class="muted"
-              >Putting back: {{ undoing.done }} of
-              {{ plural(undoing.total, "operation") }} done</span
-            >
-            <ActionButton @click="stop">Stop</ActionButton>
-          </template>
-          <span v-else class="muted"
-            >Stops without changing anything further if a file was edited or its
-            old name is taken.</span
+      <div class="actions">
+        <div class="row">
+          <span v-if="batch.status === 'undone'" class="muted"
+            >The original names were restored.</span
           >
-        </template>
+          <template v-else-if="batch.status !== 'damaged'">
+            <ActionButton variant="primary" :disabled="store.busy" @click="undo(batch.id)">
+              {{
+                batch.status === "interrupted"
+                  ? "Put the moved files back"
+                  : "Undo this batch"
+              }}
+            </ActionButton>
+            <template v-if="undoing">
+              <span class="muted"
+                >Putting back: {{ undoing.done }} of
+                {{ plural(undoing.total, "operation") }} done</span
+              >
+              <ActionButton @click="stop">Stop</ActionButton>
+            </template>
+            <span v-else class="muted"
+              >Stops without changing anything further if a file was edited or its
+              old name is taken.</span
+            >
+          </template>
+        </div>
+        <ActionButton
+          v-if="batch.status === 'complete' || batch.status === 'undone'"
+          variant="quiet"
+          :disabled="store.busy || !!undoing"
+          @click="remove(batch.id)"
+          >Remove from History</ActionButton
+        >
       </div>
     </SplitView>
   </div>
@@ -187,4 +217,6 @@ async function undo(id: string) {
 
 <style scoped>
 .more{padding-top:var(--space-dense)}
+/* Removing sits apart on the right, level with Undo, however the words beside Undo wrap. */
+.actions{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--space-nested);align-items:start}
 </style>

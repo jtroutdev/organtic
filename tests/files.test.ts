@@ -5,6 +5,7 @@ import * as fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
+  batchChanges,
   scanPaths,
   createPlan,
   applyPlan,
@@ -12,7 +13,9 @@ import {
   undoBatch,
   onSameDrive,
   history,
+  removeBatch,
 } from "../core/files.ts";
+import type { HistoryCache } from "../core/files.ts";
 import type { Media, PlanOptions, Selection } from "../core/types.ts";
 const media: Media = {
   kind: "movie",
@@ -347,7 +350,7 @@ test("an imported folder that is its title's own folder is renamed, not nested",
     // Whatever else was in the folder is still in it.
     "Severance (2022)/notes.txt",
   ]);
-  assert.deepEqual((await history(lib.journals))[0]!.operations.at(-1), {
+  assert.deepEqual((await batchChanges(plan.id, lib.journals)).at(-1), {
     type: "rename",
     source: root,
     target: path.join(lib.dir, "Severance (2022)"),
@@ -932,4 +935,81 @@ test("the check before a batch refuses a destination that appeared beside many p
   await fs.writeFile(last.target, "arrived after the preview");
   await assert.rejects(applyPlan(plan, lib.journals), /A destination now exists/);
   for (const name of names) await fs.access(path.join(lib.dir, name));
+});
+
+test("History lists a summary per batch and loads one batch's changes on its own", async (t) => {
+  const f = await fixture(t);
+  const plan = await planInPlace([{ file: f.file, media }], { nfo: true });
+  await applyPlan(plan, f.journals);
+  const [summary] = await history(f.journals);
+  // The plan holds real paths, which on macOS and Windows differ from the temporary folder's name.
+  const [move, write] = plan.operations;
+  assert.equal(move?.type, "move");
+  assert.equal(write?.type, "write");
+  assert.deepEqual(summary, {
+    id: plan.id,
+    createdAt: plan.createdAt,
+    count: 2,
+    status: "complete",
+    outcomes: { done: 2 },
+    root: path.dirname(move!.target) + path.sep,
+  });
+  assert.deepEqual(await batchChanges(plan.id, f.journals), [
+    { type: "move", source: move!.type === "move" ? move!.source : "", target: move!.target, outcome: "done" },
+    { type: "write", target: write!.target, outcome: "done" },
+  ]);
+  assert.equal(path.basename(move!.target), "Arrival (2016).mkv");
+  await assert.rejects(batchChanges("../../etc/passwd", f.journals), /Invalid batch/);
+});
+
+test("History reads a record again only when it has changed", async (t) => {
+  const f = await fixture(t);
+  const plan = await planInPlace([{ file: f.file, media }]);
+  await applyPlan(plan, f.journals);
+  const cache: HistoryCache = new Map();
+  const [first] = await history(f.journals, cache);
+  // Unchanged: the same summary comes back without the record being parsed.
+  const [again] = await history(f.journals, cache);
+  assert.equal(again, first);
+  await undoBatch(plan.id, f.journals);
+  const [undone] = await history(f.journals, cache);
+  assert.notEqual(undone, first);
+  assert.equal(undone!.status, "undone");
+  // A record that is gone is forgotten.
+  await removeBatch(plan.id, f.journals);
+  assert.deepEqual(await history(f.journals, cache), []);
+  assert.equal(cache.size, 0);
+});
+
+test("a finished or undone batch can be removed from History, an interrupted one cannot", async (t) => {
+  const f = await fixture(t);
+  const plan = await planInPlace([{ file: f.file, media }]);
+  await applyPlan(plan, f.journals);
+  await removeBatch(plan.id, f.journals);
+  assert.deepEqual(await history(f.journals), []);
+  // Removing the record leaves the renamed file where the batch put it.
+  assert.equal(await fs.readFile(path.join(f.dir, "Arrival (2016).mkv"), "utf8"), "untouched video bytes");
+  await assert.rejects(undoBatch(plan.id, f.journals), { code: "ENOENT" });
+
+  const back = await scanPaths([path.join(f.dir, "Arrival (2016).mkv")]);
+  const again = await planInPlace([{ file: back.files[0]!, media: { ...media, year: 2017 } }]);
+  await applyPlan(again, f.journals);
+  await undoBatch(again.id, f.journals);
+  await removeBatch(again.id, f.journals);
+  assert.deepEqual(await history(f.journals), []);
+
+  // Cut short after its move was announced, as a crash leaves it.
+  const fresh = await scanPaths([path.join(f.dir, "Arrival (2016).mkv")]);
+  const cut = await planInPlace([{ file: fresh.files[0]!, media: { ...media, year: 2018 } }]);
+  await fs.writeFile(
+    path.join(f.journals, `${cut.id}.jsonl`),
+    `${JSON.stringify({ type: "plan", version: 1, plan: cut })}\n${JSON.stringify({ type: "intent", index: 0 })}\n`,
+  );
+  await assert.rejects(removeBatch(cut.id, f.journals), /Undo it first/);
+  assert.equal((await history(f.journals))[0]!.status, "interrupted");
+  // An unreadable record is left for recovery by hand.
+  const damaged = "00000000-0000-0000-0000-000000000000";
+  await fs.writeFile(path.join(f.journals, `${damaged}.jsonl`), "not a record\n{}\n");
+  await assert.rejects(removeBatch(damaged, f.journals), /damaged/);
+  await assert.rejects(removeBatch("not-a-batch", f.journals), /Invalid batch/);
 });

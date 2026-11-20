@@ -1,5 +1,6 @@
 import type {
   AppSettings,
+  BatchChange,
   BatchSummary,
   Catalogue,
   EpisodeNumbers,
@@ -73,8 +74,13 @@ export interface MediaApi {
   apply(
     planId: string,
   ): Promise<{ canceled?: boolean; completed?: number; warnings?: string[] }>;
+  /** Every batch, newest first, without its changes. */
   history(): Promise<BatchSummary[]>;
+  /** What became of each change of one batch. */
+  batch(batchId: string): Promise<BatchChange[]>;
   undo(batchId: string): Promise<{ canceled?: boolean }>;
+  /** Asks first, then removes a finished or undone batch from History; it can no longer be undone. */
+  removeBatch(batchId: string): Promise<{ canceled?: boolean }>;
   saveSettings(settings: AppSettings): Promise<AppSettings>;
   /** An empty token removes the stored one. */
   setToken(token: string): Promise<SourcesState>;

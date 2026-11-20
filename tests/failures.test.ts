@@ -5,6 +5,7 @@ import * as fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
+  batchChanges,
   scanPaths,
   createPlan,
   applyPlan,
@@ -119,13 +120,16 @@ test("history says what became of each change in a batch that stopped", async (t
   const target = lib.plan.operations[second]!.target;
   assert.equal(batch!.status, "interrupted");
   assert.equal(batch!.stopped, `The disk is full: ${target}`);
-  const outcomes = batch!.operations.map((op) => op.outcome);
+  const changes = await batchChanges(lib.plan.id, lib.journals);
+  const outcomes = changes.map((op) => op.outcome);
   assert.equal(outcomes[second], "failed");
-  assert.equal(batch!.operations[second]!.message, `The disk is full: ${target}`);
+  assert.equal(changes[second]!.message, `The disk is full: ${target}`);
+  // The list's counts agree with the changes.
+  assert.deepEqual(batch!.outcomes, Object.fromEntries(Object.entries(Object.groupBy(outcomes, (o) => o)).map(([o, all]) => [o, all!.length])));
   assert.ok(outcomes.slice(second + 1).every((outcome) => outcome === "pending"), outcomes.join());
   assert.ok(outcomes.slice(0, second).every((outcome) => outcome === "done" || outcome === "skipped"), outcomes.join());
   // The poster that could not be fetched did not stop the batch, and says why it is missing.
-  const poster = batch!.operations.find((op) => op.type === "download");
+  const poster = changes.find((op) => op.type === "download");
   if (types.indexOf("download") < second)
     assert.deepEqual([poster!.outcome, poster!.message], ["skipped", "The image source could not be reached."]);
   await undoBatch(lib.plan.id, lib.journals);
@@ -139,11 +143,13 @@ test("history tells a batch the app died in from one that failed, and a finished
   let [batch] = await history(lib.journals);
   assert.equal(batch!.status, "complete");
   assert.equal(batch!.stopped, undefined);
+  const changes = await batchChanges(lib.plan.id, lib.journals);
   assert.deepEqual(
-    Object.groupBy(batch!.operations, (op) => op.outcome).skipped?.map((op) => op.type),
+    Object.groupBy(changes, (op) => op.outcome).skipped?.map((op) => op.type),
     ["download"],
   );
-  assert.ok(batch!.operations.every((op) => op.outcome === "done" || op.outcome === "skipped"));
+  assert.ok(changes.every((op) => op.outcome === "done" || op.outcome === "skipped"));
+  assert.deepEqual(Object.keys(batch!.outcomes).sort(), ["done", "skipped"]);
 
   // The same record cut off after a change was announced, as a crash leaves it.
   const journal = path.join(lib.journals, `${lib.plan.id}.jsonl`);
@@ -154,8 +160,9 @@ test("history tells a batch the app died in from one that failed, and a finished
   [batch] = await history(lib.journals);
   assert.equal(batch!.status, "interrupted");
   assert.equal(batch!.stopped, "The app closed before the batch finished.");
+  const cutChanges = await batchChanges(lib.plan.id, lib.journals);
   assert.deepEqual(
-    [batch!.operations[index]!.outcome, batch!.operations[index]!.message],
+    [cutChanges[index]!.outcome, cutChanges[index]!.message],
     ["failed", "The app closed before the batch finished."],
   );
 });
