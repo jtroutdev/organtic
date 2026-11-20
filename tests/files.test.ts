@@ -942,18 +942,23 @@ test("History lists a summary per batch and loads one batch's changes on its own
   const plan = await planInPlace([{ file: f.file, media }], { nfo: true });
   await applyPlan(plan, f.journals);
   const [summary] = await history(f.journals);
+  // The plan holds real paths, which on macOS and Windows differ from the temporary folder's name.
+  const [move, write] = plan.operations;
+  assert.equal(move?.type, "move");
+  assert.equal(write?.type, "write");
   assert.deepEqual(summary, {
     id: plan.id,
     createdAt: plan.createdAt,
     count: 2,
     status: "complete",
     outcomes: { done: 2 },
-    root: f.dir + path.sep,
+    root: path.dirname(move!.target) + path.sep,
   });
   assert.deepEqual(await batchChanges(plan.id, f.journals), [
-    { type: "move", source: f.source, target: path.join(f.dir, "Arrival (2016).mkv"), outcome: "done" },
-    { type: "write", target: path.join(f.dir, "Arrival (2016).nfo"), outcome: "done" },
+    { type: "move", source: move!.type === "move" ? move!.source : "", target: move!.target, outcome: "done" },
+    { type: "write", target: write!.target, outcome: "done" },
   ]);
+  assert.equal(path.basename(move!.target), "Arrival (2016).mkv");
   await assert.rejects(batchChanges("../../etc/passwd", f.journals), /Invalid batch/);
 });
 
