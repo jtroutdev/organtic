@@ -28,7 +28,7 @@ const stripHtml = (value: unknown) =>
 const yearOf = (date?: string | null) =>
   date ? Number(date.slice(0, 4)) || null : null;
 
-type Fetcher = (url: URL, init: RequestInit) => Promise<Response>;
+export type Fetcher = (url: URL, init: RequestInit) => Promise<Response>;
 type Params = Record<string, string | number | boolean | null | undefined>;
 
 export interface SearchInput {
