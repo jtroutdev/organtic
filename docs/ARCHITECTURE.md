@@ -44,6 +44,8 @@ The referenced [FileBot fork's license](https://github.com/mobeigi/filebot/blob/
 
 Electron is a pragmatic starting point for one-language maintenance and consistent rendering. The tradeoff is a larger runtime than a native system-webview app such as Tauri. Core modules remain UI-independent and can later serve a CLI. Future services should extend these contracts instead of adding filesystem access to the renderer.
 
+The packaged app is locked down further than a development run. Its Electron fuses turn off running as plain Node (`ELECTRON_RUN_AS_NODE`), `NODE_OPTIONS` and the `--inspect` switches, load the app only from `app.asar`, and have Electron check the archive's integrity where it can (macOS and Windows); the file protocol keeps its usual privileges because the page is loaded from a `file:` URL. The build takes the dev server's websocket out of the page's content security policy (`scripts/pagePolicy.ts`), and fails rather than ship a policy it could not change; the policy refuses forms in both. On macOS a packaged build's menu has no View menu, so reload and devtools are for unpackaged runs only. Nothing from `node_modules` is packaged: the interface and its fonts are bundled by Vite, and the desktop process needs only Electron and Node.
+
 ## Data flow
 
 ```mermaid

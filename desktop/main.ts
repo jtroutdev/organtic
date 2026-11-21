@@ -202,13 +202,14 @@ async function start() {
     mainWindow.loadURL(uiUrl);
   }
   // macOS keeps its menu: it sits in the system bar, not the window, and
-  // copy, paste and quit stop working without it.
+  // copy, paste and quit stop working without it. Its View menu, with reload
+  // and devtools, is for unpackaged runs only.
   Menu.setApplicationMenu(
     process.platform === "darwin"
       ? Menu.buildFromTemplate([
           { role: "appMenu" },
           { role: "editMenu" },
-          { role: "viewMenu" },
+          ...(app.isPackaged ? [] : [{ role: "viewMenu" } as const]),
           { role: "windowMenu" },
         ])
       : null,
