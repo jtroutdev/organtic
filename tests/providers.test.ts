@@ -628,3 +628,15 @@ test("with a TMDB token, TVmaze is asked only when TMDB's answer is not enough",
   assert.deepEqual(down.found.map((item) => item.provider), ["tvmaze"]);
   assert.deepEqual(down.failed.map((item) => item.provider), ["tmdb"]);
 });
+
+test("a source that redirects is reported as moved, not as offline", async () => {
+  const p = new Providers({
+    fetcher: async () => {
+      throw new TypeError("fetch failed", { cause: new Error("unexpected redirect") });
+    },
+  });
+  await assert.rejects(
+    p.search({ provider: "kitsu", kind: "tv", query: "Frieren" }),
+    /kitsu\.io answered with a move to another address/,
+  );
+});

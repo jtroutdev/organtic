@@ -386,7 +386,7 @@ A Kitsu show on Matching has a **Number seasons and episodes as** switch between
 - A show's own files (`tvshow.nfo`, its `poster`, `fanart`, `banner` and similar, and season posters kept in the show folder) move to the new show folder only when the whole show is reorganised: every video under the old show folder, at any depth, is in the batch and they all end up under one title. One episode left out, or an unconfirmed extras folder, keeps them where they are.
 - Where an existing NFO or image is arriving, a new one is not written or downloaded.
 
-**New NFO files** contain title, year, plot, provider ID, and episode information. Text is written as it reads: only `&`, `<` and `>` are escaped, so apostrophes and quotation marks appear as themselves. Existing NFO files are never replaced. Naming compatibility does not imply NFO support in every media player. Cross-player integration has not been tested.
+**New NFO files** contain title, year, plot, provider ID, and episode information. Text is written as it reads: only `&`, `<` and `>` are escaped, so apostrophes and quotation marks appear as themselves. Control characters that XML does not allow are left out, so a stray one in a source's text cannot make the file unreadable. Existing NFO files are never replaced. Naming compatibility does not imply NFO support in every media player. Cross-player integration has not been tested.
 
 **New artwork** is a poster and a backdrop downloaded into each title's folder as `poster.jpg` and `fanart.jpg`, names Plex, Jellyfin and Kodi all read; Plex needs "Use local assets" enabled for the library.
 

@@ -23,10 +23,14 @@ const XML_ENTITIES: Record<string, string> = {
 };
 // Only what XML requires is escaped, so a description reads as written: apostrophes and
 // quotation marks are left alone in text, and a quotation mark is escaped in an attribute.
+// XML 1.0 forbids these control characters even when escaped, so a reader would refuse the
+// whole file; they carry nothing in a title or a description and are dropped.
+const FORBIDDEN = /[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]/g;
+const text = (value: unknown) => String(value ?? "").replace(FORBIDDEN, "");
 const xml = (value: unknown) =>
-  String(value ?? "").replace(/[<>&]/g, (c) => XML_ENTITIES[c] ?? c);
+  text(value).replace(/[<>&]/g, (c) => XML_ENTITIES[c] ?? c);
 const attribute = (value: unknown) =>
-  String(value ?? "").replace(/[<>&"]/g, (c) => XML_ENTITIES[c] ?? c);
+  text(value).replace(/[<>&"]/g, (c) => XML_ENTITIES[c] ?? c);
 
 export function makeNfo(media: MediaLike): string {
   const root = media.kind === "tv" ? "episodedetails" : "movie";

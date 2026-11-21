@@ -397,3 +397,28 @@ test("the list is kept for a week, reused if a refresh fails, and never fatal", 
   assert.equal(await off.lookup(46474), null);
   assert.equal(downloads, before);
 });
+
+test("a list with no stated length stops downloading at the limit", async () => {
+  const chunk = new Uint8Array(1024 * 1024).fill(32);
+  let sent = 0;
+  let cancelled = false;
+  const endless = () =>
+    new Response(
+      new ReadableStream({
+        pull(controller) {
+          sent++;
+          controller.enqueue(chunk);
+        },
+        cancel() {
+          cancelled = true;
+        },
+      }),
+    );
+  const map = new AnimeMap({
+    fetcher: (async (address: string) => (address.endsWith(".xml") ? new Response(XML) : endless())) as typeof fetch,
+  });
+  // Lookups never fail outright; the list simply is not used.
+  assert.equal(await map.lookup(46474), null);
+  assert.ok(cancelled, "the download was stopped");
+  assert.ok(sent <= 42, `read ${sent} MB of a 40 MB limit`);
+});

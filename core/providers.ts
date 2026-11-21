@@ -102,6 +102,15 @@ interface TvmazeImage {
 export class TvdbKeyRefused extends Error {}
 
 /** The sites a match's own page may be on. Nothing else is handed to the browser. */
+/**
+ * Whether a request failed because the server redirected it. Requests refuse redirects, so a
+ * source that moves its API shows up here, and is reported as that rather than as being offline.
+ */
+function refusedRedirect(error: unknown): boolean {
+  const cause = error instanceof Error ? error.cause : undefined;
+  return cause instanceof Error && /redirect/i.test(cause.message);
+}
+
 const SOURCE_HOSTS = new Set(["www.themoviedb.org", "www.tvmaze.com", "kitsu.app", "kitsu.io"]);
 /** The address to open for a match's page, or undefined when it is not one of the sources'. */
 export function sourcePage(address: unknown): string | undefined {
@@ -383,9 +392,11 @@ export class Providers {
           signal: AbortSignal.any([AbortSignal.timeout(15000), signal]),
           redirect: "error",
         });
-      } catch {
+      } catch (error) {
         throw new Error(
-          "Could not reach the metadata source. Check your connection and try again.",
+          refusedRedirect(error)
+            ? `${url.hostname} answered with a move to another address, which Organtic does not follow. The source may have changed its address; an update to Organtic is needed.`
+            : "Could not reach the metadata source. Check your connection and try again.",
         );
       }
       if (response.status === 429 && attempt < ATTEMPTS - 1) {
