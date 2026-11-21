@@ -31,13 +31,13 @@
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
-    "@vitejs/plugin-vue": "6.0.10",
-    "axe-core": "^4.14.0",
-    "electron": "45.2.3",
+    "@vitejs/plugin-vue": "6.0.11",
+    "axe-core": "^4.14.1",
+    "electron": "45.3.4",
     "electron-builder": "26.18.0",
     "typescript": "^7.0.2",
     "typescript6": "npm:typescript@^6.0.3",
-    "vite": "8.3.7",
+    "vite": "8.3.8",
     "vue-tsc": "3.3.14"
   },
   "build": {
