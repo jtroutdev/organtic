@@ -35,9 +35,11 @@ The referenced [FileBot fork's license](https://github.com/mobeigi/filebot/blob/
 | `core/settings.ts`    | Defaults and validation of saved settings                                                                     |
 | `core/api.ts`         | The contract between the interface and the app, implemented over IPC and by the browser preview               |
 | `core/naming.ts`      | Naming templates (Plex preset), template validation, portable name formatting                                 |
+| `core/versions.ts`    | Copies of one title that would take the same name: the best keeps it, the others are named as versions        |
+| `core/paths.ts`       | The folder a batch's changes share, so History names it once and shows each path from it                      |
 | `core/media.ts`       | Supported extensions and NFO serialization                                                                    |
 | `core/types.ts`       | Shared types for files, matches, plans, and journal events                                                    |
-| `core/providers.ts`   | TMDB, TVmaze and Kitsu adapters, normalization, episode resolution, bounded memory cache, timeout and 429 retry |
+| `core/providers.ts`   | TMDB, TVmaze and Kitsu adapters, and TheTVDB for the titles of anime specials; normalization, episode resolution, bounded memory cache, timeout and 429 retry |
 | `core/throttle.ts`    | Spaces requests to each host within its limit; a request over the limit waits its turn, a 429 pauses the host  |
 | `core/files.ts`       | Scanning, plan validation, no-replace operations, durable journal events, conservative undo                   |
 | `src/demo.ts`         | Browser preview: the real session over example files and a canned catalogue; no filesystem or network access   |
@@ -73,7 +75,7 @@ This is recoverable best-effort execution, not a transactional filesystem. Metad
 
 ## Provider contract
 
-A search returns normalized `provider`, `kind`, `id`, `title`, `year`, `overview`, and `sourceUrl`. TV resolution adds `episodeId`, `season`, `episode`, `episodeTitle`, and `aired`. Keep show IDs and episode IDs separate. Current adapters expose native results in provider order and do not invent a confidence score. Automatic bulk suggestions will need an explainable score and explicit ambiguity handling.
+A search returns normalized `provider`, `kind`, `id`, `title`, `year`, `overview`, and `sourceUrl`. TV resolution adds `episodeId`, `season`, `episode`, `episodeTitle`, and `aired`. Keep show IDs and episode IDs separate. Adapters return each source's results in its own order and give them no score. `rankCandidates` (`core/group.ts`) then scores every result against the title and year read from the files, 0.8 for the title and 0.2 for the year, keeping the sources' order between equal scores, and gives each a short reason a person can check ("Exact title, year differs"). The top result becomes the group's suggestion only when it scores at least 0.85 and is at least 0.1 ahead of the next result that is a different work; the same title from another source, a year or less apart, is not counted against it. Anything else is marked for review. Either way nothing is confirmed until a person confirms it. TheTVDB is never searched: with a key set, it gives the titles of a Kitsu entry's specials that the anime list places in TVDB's numbering, when TMDB has none for them.
 
 Requests use fixed HTTPS provider origins, no redirects, a 15-second timeout, a bounded one-hour memory cache, and limited 429 retries. Requests to each host go through a queue that keeps them within its limit (`LIMITS`: TMDB about 40 a second; TVmaze, which publishes 20 calls in 10 seconds, and Kitsu and TVDB, which publish none, 20 in 10 seconds); a request over the limit waits its turn in the order it asked, a 429 pauses every request to that host and is tried up to five times with a growing wait, and a cancelled lookup leaves the queue. Requests for the same address while one is on its way share it. The lookups made when files are added ask TVmaze only when TMDB's answer is not certain, or TMDB could not be searched, when a TMDB token is set; a search the person starts asks every source. Answers are cached in memory only; whether to keep them on disk is an open decision. Do not share embedded developer credentials among installations.
 
