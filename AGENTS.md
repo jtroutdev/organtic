@@ -76,13 +76,14 @@ npm ci
 npm run dev        # Browser preview on example files; touches nothing on disk
 npm start          # Build and launch the desktop app
 npm run typecheck
+npm run lint
 npm test
 npm run build
 npm run bench      # Timings on a generated library; see the performance budget
 npm run smoke      # After a build, on Linux: start the app once with a temporary profile and drive its window
 ```
 
-Type check, tests and build all pass before a pull request is opened.
+Type check, lint, tests and build all pass before a pull request is opened.
 
 ## Branches, commits and pull requests
 

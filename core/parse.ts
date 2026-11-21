@@ -72,7 +72,7 @@ const EPISODE_ONLY =
   /\b(?:E(\d{2,4})|(?:Ep|Episode) *(\d{1,4}))\b|\s-\s(\d{1,4})(?:v\d)?(?=\s|$)/i;
 // A day in year-month-day order, as daily shows are named: 2024.03.15, 2024-03-15.
 const AIR_DATE =
-  /\b((?:19|20)\d{2})[ \-](0[1-9]|1[0-2])[ \-](0[1-9]|[12]\d|3[01])\b/;
+  /\b((?:19|20)\d{2})[ -](0[1-9]|1[0-2])[ -](0[1-9]|[12]\d|3[01])\b/;
 /** The date a name gives, unless the calendar has no such day (30 February, 31 April). */
 function airDateIn(text: string): RegExpExecArray | null {
   const dated = AIR_DATE.exec(text);

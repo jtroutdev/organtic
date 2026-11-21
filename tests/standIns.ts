@@ -19,7 +19,7 @@ export function fakeKeychain(options: { available?: boolean; backend?: string } 
 
 /** TVDB's sign-in: 401 for the key "wrong", unreachable for "offline", a session otherwise. */
 export const tvdbLogin: Fetcher = async (_url, init) => {
-  const { apikey } = JSON.parse(String(init.body)) as { apikey: string };
+  const { apikey } = JSON.parse(init.body as string) as { apikey: string };
   if (apikey === "offline") throw new TypeError("fetch failed");
   if (apikey === "wrong") return Response.json({ status: "failure" }, { status: 401 });
   return Response.json({ data: { token: "session-token" } });

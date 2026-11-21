@@ -598,6 +598,8 @@ export class Session {
       item.fileIds.includes(fileId),
     );
     if (!file || !group) throw new Error("That file is no longer in the queue.");
+    // The window's request is not trusted to be whole, whatever its type says.
+    // oxlint-disable-next-line typescript/no-useless-default-assignment
     const { season = null, episode, episodeEnd = null } = numbers ?? {};
     const whole = (value: unknown, min: number, max: number): value is number =>
       typeof value === "number" &&
@@ -1198,7 +1200,8 @@ export class Session {
       this.files.delete(fileId);
       this.excluded.delete(fileId);
     }
-    for (const group of [...this.groups.values()]) {
+    // Deleting the entry being visited is safe while iterating a Map.
+    for (const group of this.groups.values()) {
       if (!group.fileIds.some((fileId) => gone.has(fileId))) continue;
       group.fileIds = group.fileIds.filter((fileId) => !gone.has(fileId));
       if (!group.fileIds.length) this.groups.delete(group.key);

@@ -175,7 +175,7 @@ test("a plan is checked for somewhere to go before anything moves", async (t) =>
 
   const full: RoomProbe = {
     ...roomy,
-    statfs: async (...args: Parameters<typeof fs.statfs>) => ({ ...(await fs.statfs(...args)), bavail: 0 }),
+    statfs: async (...args: Parameters<typeof fs.statfs>) => Object.assign(await fs.statfs(...args), { bavail: 0 }),
   } as RoomProbe;
   const problems = await checkRoom(lib.plan, lib.journals, full);
   assert.equal(problems.length, 1, problems.join("\n"));
@@ -202,7 +202,7 @@ test("a plan is checked for somewhere to go before anything moves", async (t) =>
   // A drive that reports no size is not called full.
   const silent: RoomProbe = {
     ...roomy,
-    statfs: async (...args: Parameters<typeof fs.statfs>) => ({ ...(await fs.statfs(...args)), blocks: 0, bavail: 0 }),
+    statfs: async (...args: Parameters<typeof fs.statfs>) => Object.assign(await fs.statfs(...args), { blocks: 0, bavail: 0 }),
   } as RoomProbe;
   assert.deepEqual(await checkRoom(lib.plan, lib.journals, silent), []);
 });

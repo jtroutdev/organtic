@@ -199,7 +199,7 @@ async function start() {
       if (!guard.request("close")) event.preventDefault();
     });
     mainWindow.on("closed", () => (mainWindow = undefined));
-    mainWindow.loadURL(uiUrl);
+    mainWindow.loadURL(uiUrl).catch((error: unknown) => log.error("Loading the window", error));
   }
   // macOS keeps its menu: it sits in the system bar, not the window, and
   // copy, paste and quit stop working without it. Its View menu, with reload

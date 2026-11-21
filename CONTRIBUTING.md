@@ -31,15 +31,16 @@ npm run dev        # Browser preview on example files; touches nothing on disk
 npm start          # The desktop app
 ```
 
-Before opening a pull request, all three of these pass:
+Before opening a pull request, all four of these pass:
 
 ```sh
 npm run typecheck
+npm run lint
 npm test
 npm run build
 ```
 
-CI runs the same checks, and an unpacked package build, on Linux, Windows and macOS, for every pull request and every push to `main`. On Linux it also runs `npm run smoke`, which starts the built app with a temporary profile and drives its window, once from the build and once as packaged. It also runs `npm audit --audit-level=high`, which fails on a high or critical advisory in any dependency. Dependabot opens weekly update pull requests for npm packages and workflow actions. Workflow actions are pinned to a full commit SHA with the version in a comment beside it, since a tag can be moved to other code; a new or updated action is pinned the same way.
+CI runs the same checks (lint on Linux only, since its findings do not depend on the platform), and an unpacked package build, on Linux, Windows and macOS, for every pull request and every push to `main`. On Linux it also runs `npm run smoke`, which starts the built app with a temporary profile and drives its window, once from the build and once as packaged. It also runs `npm audit --audit-level=high`, which fails on a high or critical advisory in any dependency. Dependabot opens weekly update pull requests for npm packages and workflow actions. Workflow actions are pinned to a full commit SHA with the version in a comment beside it, since a tag can be moved to other code; a new or updated action is pinned the same way.
 
 A change that touches importing, matching, planning, applying, History or undo is measured with `npm run bench -- --dir <a folder on a real disk>` and compared with the [performance budget](docs/VALIDATION.md#performance-budget); say in the pull request what it showed. For the window, open the browser preview with `?shows=1400` (a production build, `npm run build` then `npx vite preview`, gives truer timings) and check that selecting and ticking groups stays under the budget.
 
