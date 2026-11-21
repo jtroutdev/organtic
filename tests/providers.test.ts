@@ -587,3 +587,44 @@ test("a key TVDB turns down is told apart from a failure to reach it", async () 
     await assert.rejects(unreachable.checkTvdbKey(), (error) => !(error instanceof TvdbKeyRefused));
   }
 });
+
+test("with a TMDB token, TVmaze is asked only when TMDB's answer is not enough", async () => {
+  const asked: string[] = [];
+  let tmdbDown = false;
+  const providers = new Providers({
+    fetcher: async (url) => {
+      asked.push(url.hostname);
+      if (url.hostname === "api.themoviedb.org")
+        return tmdbDown
+          ? new Response("", { status: 500 })
+          : Response.json({ results: [{ id: 1, name: "Show", first_air_date: "2020-01-01" }] });
+      return Response.json([{ show: { id: 2, name: "Show", premiered: "2020-01-01" } }]);
+    },
+  });
+  const search = (query: string, enough?: (found: Candidate[]) => boolean) =>
+    providers.searchAll({ kind: "tv", query, ...(enough ? { enough } : {}) });
+
+  // Without a token, TVmaze is the source.
+  assert.deepEqual((await search("A", () => true)).found.map((item) => item.provider), ["tvmaze"]);
+  assert.deepEqual(asked, ["api.tvmaze.com"]);
+  providers.setToken("test");
+
+  asked.length = 0;
+  assert.deepEqual((await search("B", () => true)).found.map((item) => item.provider), ["tmdb"]);
+  assert.deepEqual(asked, ["api.themoviedb.org"]);
+
+  asked.length = 0;
+  assert.deepEqual((await search("C", () => false)).found.map((item) => item.provider), ["tmdb", "tvmaze"]);
+  assert.deepEqual(asked, ["api.themoviedb.org", "api.tvmaze.com"]);
+
+  // Without `enough`, as for a search the person asked for, both are asked at once.
+  asked.length = 0;
+  await search("D");
+  assert.deepEqual(asked.sort(), ["api.themoviedb.org", "api.tvmaze.com"]);
+
+  // TMDB that could not be searched is no reason to skip TVmaze, and is named.
+  tmdbDown = true;
+  const down = await search("E", () => true);
+  assert.deepEqual(down.found.map((item) => item.provider), ["tvmaze"]);
+  assert.deepEqual(down.failed.map((item) => item.provider), ["tmdb"]);
+});

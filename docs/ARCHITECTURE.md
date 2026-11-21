@@ -36,6 +36,7 @@ The referenced [FileBot fork's license](https://github.com/mobeigi/filebot/blob/
 | `core/media.ts`       | Supported extensions and NFO serialization                                                                    |
 | `core/types.ts`       | Shared types for files, matches, plans, and journal events                                                    |
 | `core/providers.ts`   | TMDB, TVmaze and Kitsu adapters, normalization, episode resolution, bounded memory cache, timeout and 429 retry |
+| `core/throttle.ts`    | Spaces requests to each host within its limit; a request over the limit waits its turn, a 429 pauses the host  |
 | `core/files.ts`       | Scanning, plan validation, no-replace operations, durable journal events, conservative undo                   |
 | `src/demo.ts`         | Browser preview: the real session over example files and a canned catalogue; no filesystem or network access   |
 
@@ -70,7 +71,7 @@ This is recoverable best-effort execution, not a transactional filesystem. Metad
 
 A search returns normalized `provider`, `kind`, `id`, `title`, `year`, `overview`, and `sourceUrl`. TV resolution adds `episodeId`, `season`, `episode`, `episodeTitle`, and `aired`. Keep show IDs and episode IDs separate. Current adapters expose native results in provider order and do not invent a confidence score. Automatic bulk suggestions will need an explainable score and explicit ambiguity handling.
 
-Requests use fixed HTTPS provider origins, no redirects, a 15-second timeout, a bounded one-hour memory cache, and limited 429 retries. Add disk cache and queued rate limiting when batch matching is introduced. Do not share embedded developer credentials among installations.
+Requests use fixed HTTPS provider origins, no redirects, a 15-second timeout, a bounded one-hour memory cache, and limited 429 retries. Requests to each host go through a queue that keeps them within its limit (`LIMITS`: TMDB about 40 a second; TVmaze, which publishes 20 calls in 10 seconds, and Kitsu and TVDB, which publish none, 20 in 10 seconds); a request over the limit waits its turn in the order it asked, a 429 pauses every request to that host and is tried up to five times with a growing wait, and a cancelled lookup leaves the queue. Requests for the same address while one is on its way share it. The lookups made when files are added ask TVmaze only when TMDB's answer is not certain, or TMDB could not be searched, when a TMDB token is set; a search the person starts asks every source. Answers are cached in memory only; whether to keep them on disk is an open decision. Do not share embedded developer credentials among installations.
 
 ## Metadata direction
 

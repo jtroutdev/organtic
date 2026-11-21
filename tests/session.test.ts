@@ -442,6 +442,8 @@ test("lookups report progress and can be cancelled", async (t) => {
   const states: QueueUpdate[] = [];
   const make = () => {
     const providers = new Providers({
+      // Without limits a request is sent at once, so the ones held at the gate can be aborted.
+      limits: {},
       fetcher: async (url, init) => {
         await gate;
         aborted.push(!!init.signal?.aborted);
@@ -696,7 +698,7 @@ test("a fansub release is found under its English title, with Kitsu's own entry 
   assert.deepEqual(asked, ["Sousou no Frieren", "episodes"]);
 });
 
-test("every source is searched, and one that fails is named without hiding the rest", async (t) => {
+test("TVmaze joins a lookup TMDB is sure of only when asked, and a source that fails is named without hiding the rest", async (t) => {
   const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "organtic-")));
   t.after(() => fs.rm(dir, { recursive: true, force: true }));
   await fs.writeFile(path.join(dir, "Severance.S01E01.mkv"), "x");
@@ -722,15 +724,21 @@ test("every source is searched, and one that fails is named without hiding the r
   });
   await session.addFiles(await scanPaths([dir]));
   const group = () => session.state().groups[0]!;
-  // TVmaze's listing of the same show is not a rival, so the match is still suggested.
+  // TMDB is sure, so TVmaze, which allows few calls, was not asked.
+  assert.deepEqual(group().candidates.map((item) => [item.provider, item.year]), [["tmdb", 2022]]);
+  assert.deepEqual([group().status, group().chosen], ["suggested", 0]);
+  assert.match(group().files[0]!.target!, /^Severance \(2022\)\//);
+  // Nothing about the name says anime, so Kitsu was not asked.
+  assert.deepEqual([group().anime, kitsuAsked], [false, 0]);
+
+  // A search the person asks for asks every source. TVmaze's listing of the same show is not
+  // a rival, so the match is still suggested.
+  await session.search(group().key, { query: "Severance", kind: "tv" });
   assert.deepEqual(
     group().candidates.map((item) => [item.provider, item.year]),
     [["tmdb", 2022], ["tvmaze", 2022], ["tvmaze", 2006]],
   );
   assert.deepEqual([group().status, group().chosen], ["suggested", 0]);
-  assert.match(group().files[0]!.target!, /^Severance \(2022\)\//);
-  // Nothing about the name says anime, so Kitsu was not asked.
-  assert.deepEqual([group().anime, kitsuAsked], [false, 0]);
 
   // Searched as anime, it stays a show and Kitsu joins the sources.
   await session.search(group().key, { query: "Severance", kind: "anime" });

@@ -15,6 +15,8 @@ import type {
 import { placeEpisode } from "./animeMap.ts";
 import type { AnimeMap, AnimeMapping, EpisodeRule } from "./animeMap.ts";
 import { normalizeTitle, titleSimilarity } from "./parse.ts";
+import { Throttle } from "./throttle.ts";
+import type { Limit } from "./throttle.ts";
 
 const NO_NUMBER = "No episode number was found in this filename.";
 const stripHtml = (value: unknown) =>
@@ -137,10 +139,25 @@ interface EpisodeData {
   season_number?: number;
 }
 
+/**
+ * How fast each source may be asked. TVmaze publishes 20 calls in 10 seconds, and TMDB says to
+ * stay around 40 a second. Kitsu and TVDB publish no limit, so they are held to TVmaze's.
+ */
+export const LIMITS: Record<string, Limit> = {
+  "api.themoviedb.org": { calls: 40, per: 1000 },
+  "api.tvmaze.com": { calls: 20, per: 10000 },
+  "kitsu.io": { calls: 20, per: 10000 },
+  "api4.thetvdb.com": { calls: 20, per: 10000 },
+};
+/** How many times a request answered with 429 is tried before the source is called busy. */
+const ATTEMPTS = 5;
+
 export class Providers {
   private fetcher: Fetcher;
-  private sleep: (ms: number) => Promise<unknown>;
+  private throttle: Throttle;
   private cache = new Map<string, { at: number; data: unknown }>();
+  /** Requests on their way, by address, so callers asking for the same one share it. */
+  private inflight = new Map<string, Promise<unknown>>();
   private token = "";
   private controller = new AbortController();
   private animeMap: AnimeMap | undefined;
@@ -148,15 +165,20 @@ export class Providers {
   constructor({
     fetcher = fetch as Fetcher,
     sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms)),
+    now = Date.now,
+    limits = LIMITS,
     animeMap,
   }: {
     fetcher?: Fetcher;
     sleep?: (ms: number) => Promise<unknown>;
+    now?: () => number;
+    /** Requests allowed per host; empty for none, as in the benchmark, whose sources answer at once. */
+    limits?: Record<string, Limit>;
     /** Ties Kitsu entries to TMDB and TVDB seasons; without it Kitsu's own mapping is used. */
     animeMap?: AnimeMap;
   } = {}) {
     this.fetcher = fetcher;
-    this.sleep = sleep;
+    this.throttle = new Throttle({ limits, now, sleep });
     this.animeMap = animeMap;
   }
   setToken(token: unknown) {
@@ -164,6 +186,7 @@ export class Providers {
       throw new Error("Invalid TMDB token.");
     this.token = token.trim();
     this.cache.clear();
+    this.inflight.clear();
   }
   /** Abandons every request in flight; their callers see a connection error. */
   cancel() {
@@ -261,6 +284,8 @@ export class Providers {
       url.searchParams.set("page", "0");
       let listed = this.cache.get(url.href)?.data as TvdbEpisode[] | undefined;
       if (!listed) {
+        const turn = this.throttle.take(url.hostname, this.controller.signal);
+        if (turn) await turn;
         const response = await this.fetcher(url, {
           headers: {
             Accept: "application/json",
@@ -325,9 +350,24 @@ export class Providers {
     const cached = this.cache.get(key);
     if (cached && Date.now() - cached.at < 3600000)
       return structuredClone(cached.data) as T;
-    for (let attempt = 0; attempt < 3; attempt++) {
+    // Everyone asking for the same address while it is on its way gets the one answer.
+    let shared = this.inflight.get(key);
+    if (!shared) {
+      shared = this.fetchJson(provider, url).finally(() => {
+        if (this.inflight.get(key) === shared) this.inflight.delete(key);
+      });
+      this.inflight.set(key, shared);
+    }
+    return structuredClone(await shared) as T;
+  }
+  /** Asks a source once it is this request's turn, waiting out a 429 a few times. */
+  private async fetchJson(provider: ProviderName, url: URL): Promise<unknown> {
+    const signal = this.controller.signal;
+    for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
       let response: Response;
       try {
+        const turn = this.throttle.take(url.hostname, signal);
+        if (turn) await turn;
         response = await this.fetcher(url, {
           headers: {
             // Kitsu refuses anything but the JSON:API media type.
@@ -340,10 +380,7 @@ export class Providers {
               ? { Authorization: `Bearer ${this.token}` }
               : {}),
           },
-          signal: AbortSignal.any([
-            AbortSignal.timeout(15000),
-            this.controller.signal,
-          ]),
+          signal: AbortSignal.any([AbortSignal.timeout(15000), signal]),
           redirect: "error",
         });
       } catch {
@@ -351,13 +388,15 @@ export class Providers {
           "Could not reach the metadata source. Check your connection and try again.",
         );
       }
-      if (response.status === 429 && attempt < 2) {
+      if (response.status === 429 && attempt < ATTEMPTS - 1) {
         await response.body?.cancel();
+        // Every request to this source waits, not only this one; the wait grows each time.
         const seconds = Number(response.headers.get("retry-after"));
-        await this.sleep(
+        this.throttle.pause(
+          url.hostname,
           Math.min(
             10000,
-            Math.max(1000, Number.isFinite(seconds) ? seconds * 1000 : 2000),
+            Math.max(1000, Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 2000 * 2 ** attempt),
           ),
         );
         continue;
@@ -386,8 +425,8 @@ export class Providers {
         const oldest = this.cache.keys().next().value;
         if (oldest !== undefined) this.cache.delete(oldest);
       }
-      this.cache.set(key, { at: Date.now(), data });
-      return structuredClone(data) as T;
+      this.cache.set(url.href, { at: Date.now(), data });
+      return data;
     }
     throw new Error("The source is busy. Wait a moment and try again.");
   }
@@ -464,45 +503,64 @@ export class Providers {
    * Searches every source that can answer: TMDB when a token is set, TVmaze for shows,
    * and Kitsu for anime. Results keep that order. A source that fails is reported, not fatal.
    */
+  /**
+   * Searches every source that fits. Given `enough` and a TMDB token, TVmaze is asked only
+   * when TMDB's answer is not enough, or TMDB could not be searched: TVmaze allows 20 calls in
+   * 10 seconds, so asking it for every show would hold a large library to that pace.
+   */
   async searchAll({
     anime = false,
+    enough,
     ...input
-  }: Omit<SearchInput, "provider"> & { anime?: boolean }): Promise<{
+  }: Omit<SearchInput, "provider"> & {
+    anime?: boolean;
+    /** Whether what TMDB (and Kitsu) found settles the match without TVmaze; without it, every source is asked at once. */
+    enough?: (found: Candidate[]) => boolean;
+  }): Promise<{
     found: Candidate[];
     failed: { provider: ProviderName; message: string }[];
   }> {
-    const sources: ProviderName[] = [
-      ...(this.token ? (["tmdb"] as const) : []),
-      ...(input.kind === "tv" ? (["tvmaze"] as const) : []),
-      ...(anime ? (["kitsu"] as const) : []),
-    ];
-    const settled = await Promise.allSettled(
-      sources.map(async (provider) => {
-        const found = await this.search({ ...input, provider });
-        // A year read from the filename can be off or wrong; don't let it hide every result.
-        return found.length || input.year == null
-          ? found
-          : this.search({ ...input, provider, year: null });
-      }),
-    );
-    return {
-      found: settled.flatMap((result) =>
-        result.status === "fulfilled" ? result.value : [],
-      ),
-      failed: settled.flatMap((result, index) =>
-        result.status === "rejected"
-          ? [
-              {
-                provider: sources[index]!,
-                message:
-                  result.reason instanceof Error
-                    ? result.reason.message
-                    : String(result.reason),
-              },
-            ]
-          : [],
-      ),
+    const ask = async (sources: ProviderName[]) => {
+      const settled = await Promise.allSettled(
+        sources.map(async (provider) => {
+          const found = await this.search({ ...input, provider });
+          // A year read from the filename can be off or wrong; don't let it hide every result.
+          return found.length || input.year == null
+            ? found
+            : this.search({ ...input, provider, year: null });
+        }),
+      );
+      return {
+        found: settled.flatMap((result) =>
+          result.status === "fulfilled" ? result.value : [],
+        ),
+        failed: settled.flatMap((result, index) =>
+          result.status === "rejected"
+            ? [
+                {
+                  provider: sources[index]!,
+                  message:
+                    result.reason instanceof Error
+                      ? result.reason.message
+                      : String(result.reason),
+                },
+              ]
+            : [],
+        ),
+      };
     };
+    const tvmaze = input.kind === "tv";
+    const kitsu: ProviderName[] = anime ? ["kitsu"] : [];
+    if (!this.token || !enough)
+      return ask([...(this.token ? (["tmdb"] as const) : []), ...(tvmaze ? (["tvmaze"] as const) : []), ...kitsu]);
+    const cancelled = this.controller.signal;
+    const first = await ask(["tmdb", ...kitsu]);
+    // Lookups cancelled while TMDB was asked are not carried on with TVmaze.
+    if (cancelled.aborted) return first;
+    if (!tvmaze || (enough(first.found) && !first.failed.some((item) => item.provider === "tmdb")))
+      return first;
+    const more = await ask(["tvmaze"]);
+    return { found: [...first.found, ...more.found], failed: [...first.failed, ...more.failed] };
   }
   async resolve(
     candidate: Candidate,
