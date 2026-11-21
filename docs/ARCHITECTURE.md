@@ -20,7 +20,9 @@ The referenced [FileBot fork's license](https://github.com/mobeigi/filebot/blob/
 | Layer                 | Responsibility                                                                                                |
 | --------------------- | ------------------------------------------------------------------------------------------------------------- |
 | `src/`                | Vue interface: one store; a wizard (Add files, Review, Preview, Done) plus History and Settings, on a shared split view |
-| `desktop/main.ts`     | Native dialogs, saved settings, keychain-encrypted token, IPC sender checks; owns the session                  |
+| `desktop/main.ts`     | Starts the app: the window, the session, the providers and the menu; ties Electron to the modules below        |
+| `desktop/handlers.ts` | Every request the window can make, IPC sender checks, native dialogs, saved settings; Electron given as arguments |
+| `desktop/keys.ts`     | The TMDB token and TVDB key: keychain-encrypted when there is a real keychain, never written otherwise           |
 | `desktop/exitGuard.ts` | Runs apply and undo one at a time, and asks before the window closes or the app quits during one             |
 | `desktop/settingsFile.ts` | Reads saved settings, moving an unusable file aside; writes them to a temporary file and renames it into place |
 | `desktop/appLog.ts`   | The log for bug reports: start-up and errors only, home folder as `~`, tokens and keys hidden, two files of 256 KB |

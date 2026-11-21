@@ -37,3 +37,6 @@ jobs:
       - run: npm run package
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      # Starts the packaged app's code once in Electron and drives its window; see scripts/smoke.ts.
+      - if: runner.os == 'Linux'
+        run: xvfb-run -a npm run smoke

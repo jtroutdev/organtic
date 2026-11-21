@@ -79,6 +79,7 @@ npm run typecheck
 npm test
 npm run build
 npm run bench      # Timings on a generated library; see the performance budget
+npm run smoke      # After a build, on Linux: start the app once with a temporary profile and drive its window
 ```
 
 Type check, tests and build all pass before a pull request is opened.
