@@ -1277,7 +1277,7 @@ async function readBatch(file: string) {
   const count = plan.operations.length;
   const started = new Uint8Array(count);
   // The last completion or skip recorded for each operation.
-  const last: (JournalEvent & { type: "done" | "skipped" })[] = new Array(count);
+  const last = Array.from<JournalEvent & { type: "done" | "skipped" }>({ length: count });
   let finished = false;
   let undone = false;
   let failed: (JournalEvent & { type: "failed" }) | undefined;

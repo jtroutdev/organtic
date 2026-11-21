@@ -759,7 +759,7 @@ test("files with no usable number are matched by the episode name in the filenam
   ]);
   const found = group("Severance");
   assert.deepEqual(
-    found.files.map((file) => [file.label, file.issue]).sort(),
+    found.files.map((file) => [file.label, file.issue]).sort((a, b) => (String(a) < String(b) ? -1 : 1)),
     [
       ["S01E01", null],
       ["S01E03", null],

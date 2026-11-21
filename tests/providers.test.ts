@@ -485,7 +485,7 @@ const kitsu = (calls: string[] = []) =>
             relationships: { mappings: { data: [{ id: "3" }] } },
           },
           { id: "11614", attributes: { canonicalTitle: "Kimi no Na wa.", titles: { en: "Your Name." }, startDate: "2016-08-26", subtype: "movie" } },
-        ].filter((item) => !text.includes("nothing")),
+        ].filter(() => !text.includes("nothing")),
         included: [
           { id: "1", attributes: { externalSite: "anilist/anime", externalId: "154587" } },
           { id: "2", attributes: { externalSite: "myanimelist/anime", externalId: "52991" } },

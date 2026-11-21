@@ -19,8 +19,9 @@ import { Throttle } from "./throttle.ts";
 import type { Limit } from "./throttle.ts";
 
 const NO_NUMBER = "No episode number was found in this filename.";
+// Only text is kept: anything else a source sends would read as "[object Object]".
 const stripHtml = (value: unknown) =>
-  String(value || "")
+  (typeof value === "string" ? value : "")
     .replace(/<[^>]*>/g, "")
     .replace(/&amp;/g, "&")
     .replace(/&#39;/g, "'")

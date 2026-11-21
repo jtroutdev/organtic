@@ -26,7 +26,12 @@ const XML_ENTITIES: Record<string, string> = {
 // XML 1.0 forbids these control characters even when escaped, so a reader would refuse the
 // whole file; they carry nothing in a title or a description and are dropped.
 const FORBIDDEN = /[\x00-\x08\x0b\x0c\x0e-\x1f\ufffe\uffff]/g;
-const text = (value: unknown) => String(value ?? "").replace(FORBIDDEN, "");
+// Text and numbers only: anything else a source sends would read as "[object Object]".
+const text = (value: unknown) =>
+  (typeof value === "string" || typeof value === "number" ? String(value) : "").replace(
+    FORBIDDEN,
+    "",
+  );
 const xml = (value: unknown) =>
   text(value).replace(/[<>&]/g, (c) => XML_ENTITIES[c] ?? c);
 const attribute = (value: unknown) =>

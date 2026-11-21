@@ -267,7 +267,7 @@ test("per-episode exceptions are read and applied before the season default", as
       if (url.pathname === "/v4/login") {
         signIns++;
         assert.equal(init.method, "POST");
-        assert.deepEqual(JSON.parse(String(init.body)), { apikey: "key-123", pin: "4321" });
+        assert.deepEqual(JSON.parse(init.body as string), { apikey: "key-123", pin: "4321" });
         return validKey ? Response.json({ status: "success", data: { token: "session-token" } }) : Response.json({ status: "failure" }, { status: 401 });
       }
       assert.equal(new Headers(init.headers).get("authorization"), "Bearer session-token");
@@ -330,7 +330,7 @@ test("per-episode exceptions are read and applied before the season default", as
   // A long runner the list gives no single season for is still split by its rules.
   list.push({ kitsu_id: 3, anidb_id: 900, tvdb_id: 5000, themoviedb_id: { tv: 6000 } } as (typeof list)[number]);
   const long = new Providers({
-    fetcher: async (url) =>
+    fetcher: async () =>
       Response.json({ data: [14, 15].map((number) => ({ attributes: { number, canonicalTitle: `Part ${number}` } })) }),
     animeMap: new AnimeMap({
       fetcher: (async (address: string) =>

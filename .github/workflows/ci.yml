@@ -33,6 +33,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
+      # Lint findings do not depend on the platform, so Linux alone runs it.
+      - if: runner.os == 'Linux'
+        run: npm run lint
       - run: npm test
       - run: npm run package
         env:
