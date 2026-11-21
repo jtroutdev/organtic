@@ -249,12 +249,32 @@ export class AnimeMap {
         signal: AbortSignal.timeout(60000),
         redirect: "error",
       });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      if (Number(response.headers.get("content-length")) > LIMIT)
-        throw new Error("The anime list is larger than expected.");
-      const body = await response.text();
-      if (body.length > LIMIT) throw new Error("The anime list is larger than expected.");
-      return body;
+      if (!response.ok) {
+        await response.body?.cancel();
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const tooLarge = () => new Error("The anime list is larger than expected.");
+      if (Number(response.headers.get("content-length")) > LIMIT) {
+        await response.body?.cancel();
+        throw tooLarge();
+      }
+      // Read as it arrives and stop at the limit, so a server that sends no length, or the
+      // wrong one, cannot make the app hold more than that in memory.
+      const decoder = new TextDecoder();
+      let body = "";
+      let size = 0;
+      const reader = response.body?.getReader();
+      while (reader) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.length;
+        if (size > LIMIT) {
+          await reader.cancel();
+          throw tooLarge();
+        }
+        body += decoder.decode(value, { stream: true });
+      }
+      return body + decoder.decode();
     };
     try {
       const [list, exceptions] = await Promise.all([

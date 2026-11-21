@@ -166,3 +166,17 @@ test("templates can name episodes by the day they aired", () => {
   assert.equal(renderTemplate(byDate, { ...severance, aired: "soon/../x" }).at(-1), "Severance - Good News About Hell");
   assert.match(validateTemplate("{title} - {episodeTitle}", "tv").join(), /must include \{season\}/);
 });
+
+test("NFO text drops the control characters XML 1.0 forbids and keeps tabs and new lines", () => {
+  const nfo = makeNfo({
+    title: "Bad\u0000Show\u001b",
+    kind: "movie",
+    year: 2020,
+    overview: "Line one\nLine\ttwo\u0008\u000b\u000c￿",
+    provider: "tmdb",
+    id: 1,
+  });
+  assert.match(nfo, /<title>BadShow<\/title>/);
+  assert.match(nfo, /<plot>Line one\nLine\ttwo<\/plot>/);
+  assert.doesNotMatch(nfo, /[\x00-\x08\x0b\x0c\x0e-\x1f￿]/);
+});
