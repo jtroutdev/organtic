@@ -57,7 +57,7 @@ Organtic is an independent desktop application built with Electron and Vue on a 
 
 - **A four-step wizard.** Add files, Matching, Preview, Done. The header shows where you are, and each step's way back and forward sits in a footer.
 - **Matches you can check.** Every group says why it was matched and offers the alternatives as poster cards. Nothing is renamed on a suggestion alone.
-- **Four sources, searched at once.** TMDB, TVmaze and Kitsu, with TheTVDB for anime specials. You bring your own keys; none is bundled.
+- **Four sources.** TMDB, TVmaze and Kitsu, with TheTVDB for anime specials. You bring your own keys; none is bundled.
 - **Plex and Jellyfin naming, or your own.** Presets, or templates built from placeholders with a live example.
 - **Anime handled properly.** Fansub names, absolute numbering, and Kitsu entries placed in the season Plex expects.
 - **Sidecars come along.** Subtitles, NFO files and artwork move with their video, and new NFO files and artwork can be written.
@@ -289,7 +289,9 @@ Embedded container metadata is not implemented.
 
 ### How a search works
 
-- Every search sends the entered title and filters to all the sources for that group at once: TMDB when a token is set, TVmaze for shows, and Kitsu for groups searched as anime. A title is never sent to Kitsu otherwise.
+- A search you start on Matching sends the entered title and filters to all the sources for that group at once: TMDB when a token is set, TVmaze for shows, and Kitsu for groups searched as anime. A title is never sent to Kitsu otherwise.
+- The lookups made when files are added work the same way, except that with a TMDB token a show is sent to TVmaze only when TMDB finds no certain match. TVmaze allows 20 requests in 10 seconds, so asking it about every show would hold a large library to that pace.
+- Requests to each source are spaced to stay within its limit: about 40 a second for TMDB, and 20 in 10 seconds for TVmaze, Kitsu and TheTVDB. A lookup over the limit waits its turn instead of failing, a source that answers "too many requests" is given a pause before anyone asks it again, and lookups asking for the same thing at the same time share one request.
 - Results are ranked together by how well they fit the filename. The same title from two sources is not treated as a conflict; the source searched first is suggested.
 - When a name starting with a year, such as `1999 - The Matrix`, finds no certain match as written, the rest of the name is searched again with that number as the year. The group says when its match was found this way.
 - A source that cannot be reached is named on the group and the others' results are still offered. Provider errors are displayed as errors, not empty successful searches.

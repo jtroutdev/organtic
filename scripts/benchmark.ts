@@ -21,7 +21,7 @@ import path from "node:path";
 import { monitorEventLoopDelay, performance } from "node:perf_hooks";
 import { parseArgs } from "node:util";
 import { applyPlan, batchChanges, checkRoom, createPlan, history, scanPaths, undoBatch } from "../core/files.ts";
-import { Providers } from "../core/providers.ts";
+import { LIMITS, Providers } from "../core/providers.ts";
 import { Session } from "../core/session.ts";
 import { DEFAULT_SETTINGS } from "../core/settings.ts";
 
@@ -79,7 +79,9 @@ function catalogue(shows: ReturnType<typeof episodes>) {
   const byTitle = new Map(shows.map((show) => [show.title.toLowerCase(), show]));
   const byId = new Map(shows.map((show) => [String(show.id), show]));
   const unknown = new Map<string, number>();
+  const asked = new Map<string, number>();
   const fetcher = async (url: URL) => {
+    asked.set(url.hostname, (asked.get(url.hostname) ?? 0) + 1);
     if (url.hostname !== "api.themoviedb.org")
       return Response.json(url.hostname === "kitsu.io" ? { data: [] } : []);
     const at = url.pathname.replace("/3/", "");
@@ -107,7 +109,7 @@ function catalogue(shows: ReturnType<typeof episodes>) {
     unknown.set(shape, (unknown.get(shape) ?? 0) + 1);
     return new Response("", { status: 404 });
   };
-  return { fetcher, unknown };
+  return { fetcher, unknown, asked };
 }
 
 const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
@@ -120,8 +122,10 @@ async function run(library: Library, base: string) {
     const media = path.join(root, "media");
     const journalDir = path.join(root, "history");
     const shows = await build(media, library);
-    const { fetcher, unknown } = catalogue(shows);
-    const providers = new Providers({ fetcher });
+    const { fetcher, unknown, asked } = catalogue(shows);
+    // The stand-in answers at once, so the sources' own limits are left out: waiting on them is
+    // not the app's work. The requests are counted instead, to show what those limits would cost.
+    const providers = new Providers({ fetcher, limits: {} });
     providers.setToken("benchmark");
 
     // Each push is serialised as the desktop app does when it sends the queue to the window.
@@ -193,6 +197,7 @@ async function run(library: Library, base: string) {
       bytes: lookupBytes,
       phases: { imported, preview, applied, listed, undone },
       unknown,
+      asked,
     };
   } finally {
     await fs.rm(root, { recursive: true, force: true });
@@ -239,6 +244,13 @@ for (const library of libraries) {
   console.log(`  Held up longest during ${names[worst[0]]}.`);
   if (result.suggested !== library.shows)
     console.warn(`  ${result.suggested} of ${library.shows} shows were suggested; the stand-in catalogue needs a look.`);
+  // What the sources' limits would add if they answered at once: at least this long to ask them all.
+  const waits = [...result.asked].map(([host, count]) => {
+    const limit = LIMITS[host];
+    const seconds = limit ? Math.max(0, count - limit.calls) * (limit.per / limit.calls) / 1000 : 0;
+    return `${host} ${count.toLocaleString("en")} (${seconds.toFixed(0)} s at its limit)`;
+  });
+  console.log(`  Requests: ${waits.join(", ")}.`);
   for (const [shape, count] of result.unknown)
     console.warn(`  Unanswered request: ${shape} (${count})`);
 }

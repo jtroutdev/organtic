@@ -668,7 +668,8 @@ export class Session {
     group.reason = reason;
   }
 
-  private async lookUp(group: Group) {
+  /** `everySource`: a search the person asked for, which asks TVmaze even when TMDB is sure. */
+  private async lookUp(group: Group, everySource = false) {
     const lookup = ++group.lookup;
     group.status = "matching";
     group.reason = "Looking up matches.";
@@ -680,9 +681,13 @@ export class Session {
         query: group.query,
         language: this.settings.language,
       };
+      // TVmaze is asked only when TMDB alone does not settle the match.
+      const settles = (wanted: { title: string; year: number | null }) =>
+        everySource ? undefined : (found: Candidate[]) => rankCandidates(wanted, found).confident;
       const { found, failed } = await this.providers.searchAll({
         ...input,
         year: group.year,
+        enough: settles({ title: group.query, year: group.year }),
       });
       if (lookup !== group.lookup || !this.groups.has(group.key)) return;
       if (!found.length) {
@@ -708,7 +713,7 @@ export class Session {
       if (!confident && wanted && (group.year === null || group.year === wanted.year)) {
         const again = rankCandidates(
           wanted,
-          (await this.providers.searchAll({ ...input, query: wanted.title, year: wanted.year }))
+          (await this.providers.searchAll({ ...input, query: wanted.title, year: wanted.year, enough: settles(wanted) }))
             .found,
         );
         if (lookup !== group.lookup || !this.groups.has(group.key)) return;
@@ -727,7 +732,7 @@ export class Session {
         for (const title of titles.slice(0, 2)) {
           const again = rankCandidates(
             { title, year: null },
-            (await this.providers.searchAll({ ...input, query: title })).found,
+            (await this.providers.searchAll({ ...input, query: title, enough: settles({ title, year: null }) })).found,
           );
           if (!again.confident) continue;
           ({ ranked, confident, rival } = again);
@@ -898,7 +903,7 @@ export class Session {
     if (!group.anime) group.kind = request.kind === "tv" ? "tv" : "movie";
     // The typed title replaces the parsed one, so its year no longer applies.
     if (group.query !== group.parsedTitle) group.year = null;
-    await this.lookUp(group);
+    await this.lookUp(group, true);
   }
 
   /** For a Kitsu match, says whose numbering ended up in the names when that is not the default. */
