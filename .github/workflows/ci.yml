@@ -40,3 +40,6 @@ jobs:
       # Starts the packaged app's code once in Electron and drives its window; see scripts/smoke.ts.
       - if: runner.os == 'Linux'
         run: xvfb-run -a npm run smoke
+      # The same, on the packaged app: its fuses, archive and built page policy.
+      - if: runner.os == 'Linux'
+        run: xvfb-run -a npm run smoke -- release/linux-unpacked/organtic

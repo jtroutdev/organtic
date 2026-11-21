@@ -24,13 +24,10 @@
     "package": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder"
   },
-  "dependencies": {
+  "devDependencies": {
     "@fontsource/readex-pro": "^5.3.0",
     "@fontsource/red-hat-mono": "^5.3.0",
     "@fontsource/red-hat-text": "^5.3.0",
-    "vue": "3.5.45"
-  },
-  "devDependencies": {
     "@types/node": "^24.19.2",
     "@vitejs/plugin-vue": "6.0.11",
     "axe-core": "^4.14.1",
@@ -39,6 +36,7 @@
     "typescript": "^7.0.2",
     "typescript6": "npm:typescript@^6.0.3",
     "vite": "8.3.8",
+    "vue": "3.5.45",
     "vue-tsc": "3.3.14"
   },
   "build": {
@@ -54,6 +52,14 @@
       "LICENSE",
       "THIRD_PARTY_NOTICES.md"
     ],
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true,
+      "grantFileProtocolExtraPrivileges": true
+    },
     "directories": {
       "output": "release"
     },
