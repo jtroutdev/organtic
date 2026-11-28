@@ -169,15 +169,40 @@ const identifier = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined;
 
 const ATTEMPTS = 5;
+const CACHE_AGE = 3600000;
+const CACHE_SIZE = 500;
+const TVDB_HOST = "api4.thetvdb.com";
+/** Pages of a TVDB listing to follow before giving up on an episode that is not in them. */
+const TVDB_PAGES = 10;
 
 export class Providers {
   private fetcher: Fetcher;
   private throttle: Throttle;
   private cache = new Map<string, { at: number; data: unknown }>();
+  /** An answer kept for this address, if one was kept and it is still fresh. */
+  private cached<T>(key: string): T | undefined {
+    const held = this.cache.get(key);
+    return held && this.now() - held.at < CACHE_AGE ? (held.data as T) : undefined;
+  }
+  /** Keeps an answer, dropping the oldest once the cache is full. */
+  private remember(key: string, data: unknown) {
+    if (!this.cache.has(key) && this.cache.size >= CACHE_SIZE) {
+      const oldest = this.cache.keys().next().value;
+      if (oldest !== undefined) this.cache.delete(oldest);
+    }
+    this.cache.set(key, { at: this.now(), data });
+  }
+  /** Forgets every answer from one host, for when the key it was fetched with changes. */
+  private forgetHost(host: string) {
+    // Deleting the entry in hand is safe: a Map's iterator carries on from where it is.
+    for (const key of this.cache.keys())
+      if (new URL(key).hostname === host) this.cache.delete(key);
+  }
   /** Requests on their way, by address, so callers asking for the same one share it. */
   private inflight = new Map<string, Promise<unknown>>();
   private token = "";
   private controller = new AbortController();
+  private now: () => number = Date.now;
   private animeMap: AnimeMap | undefined;
 
   constructor({
@@ -196,6 +221,7 @@ export class Providers {
     animeMap?: AnimeMap;
   } = {}) {
     this.fetcher = fetcher;
+    this.now = now;
     this.throttle = new Throttle({ limits, now, sleep });
     this.animeMap = animeMap;
   }
@@ -232,6 +258,8 @@ export class Providers {
     this.tvdbKey = key.trim();
     this.tvdbPin = this.tvdbKey ? pin.trim() : "";
     this.tvdbSession = null;
+    // Listings fetched with the old key are not answers for the new one.
+    this.forgetHost(TVDB_HOST);
   }
   get hasTvdbKey() {
     return this.tvdbKey !== "";
@@ -298,35 +326,57 @@ export class Providers {
     const series = identifier(candidate.tvdbId);
     if (!series) return [];
     try {
-      const url = new URL(
-        `https://api4.thetvdb.com/v4/series/${series}/episodes/default/${code}`,
-      );
-      url.searchParams.set("season", String(season));
-      url.searchParams.set("page", "0");
-      let listed = this.cache.get(url.href)?.data as TvdbEpisode[] | undefined;
+      const address = (page: number) => {
+        const url = new URL(
+          `https://${TVDB_HOST}/v4/series/${series}/episodes/default/${code}`,
+        );
+        url.searchParams.set("season", String(season));
+        url.searchParams.set("page", String(page));
+        return url;
+      };
+      // One season's listing is kept under one address, whatever it took to collect.
+      const key = address(0).href;
+      let listed = this.cached<TvdbEpisode[]>(key);
       if (!listed) {
-        const turn = this.throttle.take(url.hostname, this.controller.signal);
-        if (turn) await turn;
-        const response = await this.fetcher(url, {
-          headers: {
-            Accept: "application/json",
-            "User-Agent": "Organtic/0.1",
-            Authorization: `Bearer ${await this.tvdbSignIn()}`,
-          },
-          signal: AbortSignal.any([
-            AbortSignal.timeout(15000),
-            this.controller.signal,
-          ]),
-          redirect: "error",
-        });
-        // An expired sign-in is renewed the next time it is needed.
-        if (response.status === 401) this.tvdbSession = null;
-        if (!response.ok) return [];
-        const data = (await readJsonLimited(response, url.hostname)) as {
-          data?: { episodes?: TvdbEpisode[] };
-        };
-        listed = Array.isArray(data.data?.episodes) ? data.data.episodes : [];
-        this.cache.set(url.href, { at: Date.now(), data: listed });
+        const collected: TvdbEpisode[] = [];
+        const missing = () =>
+          numbers.some(
+            (number) =>
+              !collected.some(
+                (episode) => episode.seasonNumber === season && episode.number === number,
+              ),
+          );
+        // TVDB's paging fields are written from memory of its API, so they are not relied on:
+        // another page is asked for only while an episode that was asked for is still missing.
+        // A season that fits one page costs one request, and a longer one is still found.
+        for (let page = 0; page < TVDB_PAGES; page++) {
+          const url = address(page);
+          const turn = this.throttle.take(url.hostname, this.controller.signal);
+          if (turn) await turn;
+          const response = await this.fetcher(url, {
+            headers: {
+              Accept: "application/json",
+              "User-Agent": "Organtic/0.1",
+              Authorization: `Bearer ${await this.tvdbSignIn()}`,
+            },
+            signal: AbortSignal.any([
+              AbortSignal.timeout(15000),
+              this.controller.signal,
+            ]),
+            redirect: "error",
+          });
+          // An expired sign-in is renewed the next time it is needed.
+          if (response.status === 401) this.tvdbSession = null;
+          if (!response.ok) return [];
+          const data = (await readJsonLimited(response, url.hostname)) as {
+            data?: { episodes?: TvdbEpisode[] };
+          };
+          const episodes = Array.isArray(data.data?.episodes) ? data.data.episodes : [];
+          collected.push(...episodes);
+          if (!episodes.length || !missing()) break;
+        }
+        listed = collected;
+        this.remember(key, listed);
       }
       const found = numbers.map((number) => {
         const item = listed.find(
@@ -373,9 +423,8 @@ export class Providers {
         url.searchParams.set(k, String(v));
     });
     const key = url.href;
-    const cached = this.cache.get(key);
-    if (cached && Date.now() - cached.at < 3600000)
-      return structuredClone(cached.data) as T;
+    const cached = this.cached<T>(key);
+    if (cached !== undefined) return structuredClone(cached) as T;
     // Everyone asking for the same address while it is on its way gets the one answer.
     let shared = this.inflight.get(key);
     if (!shared) {
@@ -450,11 +499,7 @@ export class Providers {
       }
       if (!data || typeof data !== "object")
         throw new Error("The source returned invalid data.");
-      if (this.cache.size >= 500) {
-        const oldest = this.cache.keys().next().value;
-        if (oldest !== undefined) this.cache.delete(oldest);
-      }
-      this.cache.set(url.href, { at: Date.now(), data });
+      this.remember(url.href, data);
       return data;
     }
     throw new Error("The source is busy. Wait a moment and try again.");

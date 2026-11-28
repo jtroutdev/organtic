@@ -735,3 +735,117 @@ test("an address that leaves its source's own path is refused", async () => {
   // Nothing was asked, so the TMDB token never left with any of them.
   assert.deepEqual(asked, []);
 });
+
+/** A clock that moves only when the test moves it, so the cache's age can be reached. */
+const fakeClock = () => {
+  const clock = {
+    time: 0,
+    now: () => clock.time,
+    sleep: async (ms: number) => {
+      clock.time += ms;
+    },
+  };
+  return clock;
+};
+
+/** Reaches the private TVDB listing, as the class's own resolution does. */
+type TvdbReader = {
+  tvdbEpisodes: (
+    candidate: { tvdbId?: number },
+    season: number,
+    numbers: number[],
+    language: string,
+  ) => Promise<{ number: number; title: string }[]>;
+};
+
+/** A TVDB that signs in and serves the given pages of one season. */
+const fakeTvdb = (pages: { seasonNumber: number; number: number; id: number; name: string }[][]) => {
+  const asked: string[] = [];
+  const fetcher = async (url: URL) => {
+    asked.push(url.pathname + url.search);
+    if (url.pathname === "/v4/login") return Response.json({ data: { token: "session" } });
+    const page = Number(url.searchParams.get("page") ?? "0");
+    return Response.json({ data: { episodes: pages[page] ?? [] } });
+  };
+  return { asked, fetcher, listings: () => asked.filter((at) => at.includes("/episodes/")) };
+};
+const episode = (number: number) => ({
+  seasonNumber: 1,
+  number,
+  id: 1000 + number,
+  name: `Special ${number}`,
+});
+
+test("a TVDB listing is fetched again once it is an hour old, and not before", async () => {
+  const clock = fakeClock();
+  const tvdb = fakeTvdb([[episode(1)]]);
+  const providers = new Providers({ fetcher: tvdb.fetcher, limits: {}, ...clock });
+  providers.setTvdbKey("key", "");
+  const read = providers as unknown as TvdbReader;
+
+  assert.deepEqual((await read.tvdbEpisodes({ tvdbId: 7 }, 1, [1], "en")).map((e) => e.title), [
+    "Special 1",
+  ]);
+  assert.equal(tvdb.listings().length, 1);
+  // Within the hour the kept answer is used.
+  clock.time += 3599000;
+  await read.tvdbEpisodes({ tvdbId: 7 }, 1, [1], "en");
+  assert.equal(tvdb.listings().length, 1);
+  // Past it, the source is asked again.
+  clock.time += 2000;
+  await read.tvdbEpisodes({ tvdbId: 7 }, 1, [1], "en");
+  assert.equal(tvdb.listings().length, 2);
+});
+
+test("changing the TVDB key forgets what the old one fetched", async () => {
+  const tvdb = fakeTvdb([[episode(1)]]);
+  const providers = new Providers({ fetcher: tvdb.fetcher, limits: {} });
+  providers.setTvdbKey("first", "");
+  const read = providers as unknown as TvdbReader;
+  await read.tvdbEpisodes({ tvdbId: 7 }, 1, [1], "en");
+  assert.equal(tvdb.listings().length, 1);
+  await read.tvdbEpisodes({ tvdbId: 7 }, 1, [1], "en");
+  assert.equal(tvdb.listings().length, 1);
+
+  providers.setTvdbKey("second", "");
+  await read.tvdbEpisodes({ tvdbId: 7 }, 1, [1], "en");
+  assert.equal(tvdb.listings().length, 2, "the new key was answered from the old key's results");
+});
+
+test("a season's listing is followed past the first page, and only when it must be", async () => {
+  // The episode asked for is on the second page.
+  const split = fakeTvdb([[episode(1), episode(2)], [episode(3)]]);
+  const providers = new Providers({ fetcher: split.fetcher, limits: {} });
+  providers.setTvdbKey("key", "");
+  assert.deepEqual(
+    (await (providers as unknown as TvdbReader).tvdbEpisodes({ tvdbId: 7 }, 1, [3], "en")).map(
+      (e) => e.title,
+    ),
+    ["Special 3"],
+  );
+  assert.deepEqual(split.listings().map((at) => at.match(/page=\d/)![0]), ["page=0", "page=1"]);
+
+  // When the first page has what was asked for, no further page is asked.
+  const enough = fakeTvdb([[episode(1), episode(2)], [episode(3)]]);
+  const second = new Providers({ fetcher: enough.fetcher, limits: {} });
+  second.setTvdbKey("key", "");
+  await (second as unknown as TvdbReader).tvdbEpisodes({ tvdbId: 7 }, 1, [2], "en");
+  assert.deepEqual(enough.listings().map((at) => at.match(/page=\d/)![0]), ["page=0"]);
+});
+
+test("the answer cache keeps its bound", async () => {
+  const asked: string[] = [];
+  const providers = new Providers({
+    fetcher: async (url) => (asked.push(String(url)), Response.json({ results: [] })),
+    limits: {},
+  });
+  providers.setToken("test");
+  const ask = (providers as unknown as { request: (p: string, r: string) => Promise<unknown> })
+    .request.bind(providers);
+  await ask("tmdb", "first");
+  // Filling the cache past its 500 entries drops the oldest, so the first is asked again.
+  for (let n = 0; n < 500; n++) await ask("tmdb", `route-${n}`);
+  const before = asked.length;
+  await ask("tmdb", "first");
+  assert.equal(asked.length, before + 1, "the oldest answer was still held");
+});
