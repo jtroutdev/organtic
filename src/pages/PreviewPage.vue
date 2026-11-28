@@ -64,6 +64,10 @@ interface Row {
 /** The selected group's changes as an indented folder tree, folders before their contents. */
 const rows = computed<Row[]>(() => {
   const created = new Set(preview.value?.newFolders);
+  // Looked up once per folder segment of every change, so it is a map, not a search.
+  const renamed = new Map(
+    preview.value?.renamedFolders.map((folder) => [folder.to, folder.from]),
+  );
   const seen = new Set<string>();
   const out: Row[] = [];
   const items = [...(group.value?.items ?? [])].sort((a, b) => a.to.localeCompare(b.to));
@@ -77,7 +81,7 @@ const rows = computed<Row[]>(() => {
         depth,
         name: `${name}/`,
         isNew: created.has(folder),
-        was: preview.value?.renamedFolders.find((item) => item.to === folder)?.from,
+        was: renamed.get(folder),
       });
     });
     out.push({ depth: parts.length - 1, name: parts.at(-1)!, isNew: false, item });

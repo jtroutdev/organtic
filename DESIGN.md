@@ -144,6 +144,7 @@ spacing:
   control: 32px
   control-sm: 24px
   list-item: 60px
+  change-row: 28px
 components:
   button:
     backgroundColor: "{colors.surface-raised}"
@@ -374,7 +375,7 @@ Every screen is the same split: a list between 220 and 300px wide on the left, t
 
 Every control is 32px tall: buttons, inputs, tabs, steps, segmented sets, list view tabs and option rows. A compact 24px button exists for use inside a table row and nowhere else.
 
-A list that can run to hundreds of rows, such as the groups on Matching, does not draw the rows out of sight: each row takes `content-visibility: auto`, with `list-item` (60px, a two-line list item) as its height until it has been drawn. Every row stays in the page, so keyboard movement, find and screen readers reach all of them. Each row is a component of its own, so a change to one row redraws only that row.
+A list that can run to hundreds of rows, such as the groups on Matching, the confirmed groups on Preview, the batches in History or one batch's changes, does not draw the rows out of sight: each row takes `content-visibility: auto`, with its own resting height as the size until it has been drawn — `list-item` (60px) for a two-line list item, `change-row` (28px) for a line of a batch's changes. Every row stays in the page, so keyboard movement, find and screen readers reach all of them. Each row is a component of its own, so a change to one row redraws only that row.
 
 Wizard steps (Add files, Review, Preview, Done) end in a footer, set off by the page gap and no rule: the destructive or back action on the left, a secondary action second from the right, the step's one primary action on the far right. History and Settings keep their actions at the top.
 

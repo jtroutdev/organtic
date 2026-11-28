@@ -37,7 +37,8 @@ defineProps<{
 </template>
 
 <style scoped>
-.item{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:stretch;text-align:left;background:none;border:0;border-bottom:1px solid var(--color-outline-subtle);padding:0}
+/* Items out of sight are not drawn; until one has been, it takes a list item's height. */
+.item{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:stretch;text-align:left;background:none;border:0;border-bottom:1px solid var(--color-outline-subtle);padding:0;content-visibility:auto;contain-intrinsic-size:auto var(--size-list-item)}
 .text{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--space-dense);align-content:center;padding:var(--space-nested) var(--space-surface)}
 .item:hover{background-image:linear-gradient(var(--color-hover) 0 0)}
 /* The selected item: the tint, and an accent edge drawn above its contents so that it runs
