@@ -13,6 +13,7 @@ import {
   batchChanges,
   history,
   onSameDrive,
+  readHistoryIndex,
   removeBatch,
   undoBatch,
 } from "../core/files.ts";
@@ -275,9 +276,14 @@ export async function registerHandlers(options: HandlerOptions): Promise<void> {
       return await session.apply(id, signal, progressOf("apply"));
     }),
   );
-  // Records that have not changed since History last opened are not read again.
-  const historyCache: HistoryCache = new Map();
-  register("history", () => history(journalDir, historyCache));
+  // Records that have not changed since History last opened are not read again. On the first
+  // call the summaries written beside the records are read, so a restart does not parse every
+  // record again; `history` writes that index back whenever the cache changes.
+  let historyCache: HistoryCache | null = null;
+  register("history", async () => {
+    historyCache ??= await readHistoryIndex(journalDir);
+    return history(journalDir, historyCache);
+  });
   register("batch", (id) => batchChanges(text(id, "batch"), journalDir));
   register("removeBatch", async (id) => {
     if (guard.busy) throw new Error("A batch is running. Remove this one once it has finished.");
