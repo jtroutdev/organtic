@@ -7,7 +7,7 @@ import { VIDEO_EXTENSIONS, SUBTITLE_EXTENSIONS, makeNfo } from "./media.ts";
 import { normalizeTitle, parseMediaPath, parseStem } from "./parse.ts";
 import { nameVersions } from "./versions.ts";
 import { PLEX_TEMPLATES, renderTemplate, safeName } from "./naming.ts";
-import { commonFolder } from "./paths.ts";
+import { commonFolder, isBelow } from "./paths.ts";
 import type {
   BatchChange,
   BatchStatus,
@@ -615,7 +615,7 @@ export async function createPlan(
         show.titles.size !== 1 ||
         !title ||
         title === showDir ||
-        !boundaries.some((root) => showDir.startsWith(root + path.sep))
+        !boundaries.some((root) => isBelow(showDir, root))
       )
         continue;
       const videos = await videosUnder(showDir);
@@ -649,7 +649,7 @@ export async function createPlan(
         leaving.kinds.size !== 1 ||
         !destination ||
         destination === dir ||
-        !boundaries.some((root) => dir.startsWith(root + path.sep))
+        !boundaries.some((root) => isBelow(dir, root))
       )
         continue;
       const entries = await fs.readdir(dir);
@@ -786,7 +786,7 @@ async function emptiedFolders(
     leaving.get(from)!.add(path.basename(op.source));
   }
   const removable = (dir: string) =>
-    boundaries.some((root) => dir.startsWith(root + path.sep)) &&
+    boundaries.some((root) => isBelow(dir, root)) &&
     !receiving.has(key(dir));
   const removed = new Set<string>();
   // Deepest first, so a parent is judged after the children that might empty it.
@@ -1280,7 +1280,9 @@ const indexesOf = (events: JournalEvent[], type: "intent" | "undo-done") =>
 
 const BATCH_ID = /^[a-f0-9-]{36}$/;
 const journalOf = (id: string, journalDir: string) => {
-  if (!BATCH_ID.test(id)) throw new Error("Invalid batch.");
+  // Without this, `test` and the file name below each convert the value separately, so an object
+  // with a changing `toString` could have one name checked and another opened.
+  if (typeof id !== "string" || !BATCH_ID.test(id)) throw new Error("Invalid batch.");
   return path.join(journalDir, `${id}.jsonl`);
 };
 

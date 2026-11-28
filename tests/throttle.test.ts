@@ -61,7 +61,10 @@ test("a burst of lookups over TVmaze's limit all complete, in order, with no bus
         return new Response("", { status: 429, headers: { "Retry-After": "2" } });
       }
       asked.push([query, clock.time]);
-      return Response.json([{ show: { id: Number(query.slice(5)), name: query, premiered: "2020-01-01" } }]);
+      // Ids start at 1: no source numbers an entry 0, and a candidate without a usable id is dropped.
+      return Response.json([
+        { show: { id: Number(query.slice(5)) + 1, name: query, premiered: "2020-01-01" } },
+      ]);
     },
   });
   const queries = Array.from({ length: 45 }, (_, index) => `Show ${index}`);
