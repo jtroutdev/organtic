@@ -885,3 +885,33 @@ test("a change to many groups is described a slice at a time and sent once, as t
   await sent(2);
   assert.deepEqual(window, session.state());
 });
+
+test("a choice must name a candidate by its number, not by a property of the list", async (t) => {
+  const { session, group } = await setup(t, ["Solaris.mkv"]);
+  const key = group("Solaris").key;
+  assert.ok(group("Solaris").candidates.length > 1);
+  // "slice" and "length" read off the array and its prototype, and both are truthy.
+  const refused: [string, unknown][] = [
+    ["slice", "slice"],
+    ["length", "length"],
+    ["a number written as text", "0"],
+    ["a fraction", 1.5],
+    ["below the list", -1],
+    ["past the list", 99],
+    ["null", null],
+    ["nothing", undefined],
+    ["an object", {}],
+  ];
+  for (const [what, index] of refused)
+    await assert.rejects(
+      () => session.choose(key, index as number),
+      /Search again and choose a result\./,
+      what,
+    );
+  // Nothing was chosen or confirmed on the way: two films share the title, so it is still open.
+  assert.equal(group("Solaris").status, "unmatched");
+  assert.equal(group("Solaris").chosen, null);
+  await session.choose(key, 1);
+  assert.equal(group("Solaris").status, "confirmed");
+  assert.equal(group("Solaris").chosen, 1);
+});

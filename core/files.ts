@@ -1264,7 +1264,9 @@ const indexesOf = (events: JournalEvent[], type: "intent" | "undo-done") =>
 
 const BATCH_ID = /^[a-f0-9-]{36}$/;
 const journalOf = (id: string, journalDir: string) => {
-  if (!BATCH_ID.test(id)) throw new Error("Invalid batch.");
+  // Without this, `test` and the file name below each convert the value separately, so an object
+  // with a changing `toString` could have one name checked and another opened.
+  if (typeof id !== "string" || !BATCH_ID.test(id)) throw new Error("Invalid batch.");
   return path.join(journalDir, `${id}.jsonl`);
 };
 

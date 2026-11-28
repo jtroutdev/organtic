@@ -1012,4 +1012,16 @@ test("a finished or undone batch can be removed from History, an interrupted one
   await fs.writeFile(path.join(f.journals, `${damaged}.jsonl`), "not a record\n{}\n");
   await assert.rejects(removeBatch(damaged, f.journals), /damaged/);
   await assert.rejects(removeBatch("not-a-batch", f.journals), /Invalid batch/);
+
+  // A batch id must be a string. An object whose toString answers differently each time would
+  // otherwise have one name tested and another opened, since test() and the file name each
+  // convert it separately.
+  let answers = 0;
+  const shifty = {
+    toString: () => (answers++ === 0 ? damaged : "../outside"),
+  } as unknown as string;
+  await assert.rejects(removeBatch(shifty, f.journals), /Invalid batch/);
+  await assert.rejects(undoBatch(shifty, f.journals), /Invalid batch/);
+  await assert.rejects(batchChanges(shifty, f.journals), /Invalid batch/);
+  assert.equal(answers, 0, "the value was refused before it was ever converted");
 });
