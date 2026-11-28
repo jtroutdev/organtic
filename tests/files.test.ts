@@ -1046,7 +1046,13 @@ test("a folder is canonicalized once, and aliases still collapse to one file", a
   const walked = await scanPaths([path.join(dir, "real")]);
   assert.deepEqual(
     walked.files.map((file) => path.relative(dir, file.path)),
-    ["real/Season 01/a.mkv", "real/Season 01/b.mkv", "real/Season 01/c.mkv", "real/top.mkv"],
+    // Built with path.join: Windows reports these with its own separator.
+    [
+      path.join("real", "Season 01", "a.mkv"),
+      path.join("real", "Season 01", "b.mkv"),
+      path.join("real", "Season 01", "c.mkv"),
+      path.join("real", "top.mkv"),
+    ],
   );
   assert.deepEqual(walked.files.map((file) => file.root), Array(4).fill(path.join(dir, "real")));
 
