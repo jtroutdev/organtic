@@ -944,3 +944,47 @@ test("sibling import folders whose names start alike are told apart in the previ
   await fs.access(path.join(dir, "Arrival"));
   await fs.access(path.join(dir, "Arrival 2"));
 });
+
+test("removing several groups, and a batch that renames no folder, each send one update", async (t) => {
+  const { session, states, group } = await setup(t, [
+    "Severance.S01E01.mkv",
+    "Severance.S01E09.mkv",
+    "Arrival.2016.mkv",
+    "Solaris.mkv",
+  ]);
+  const keys = session.state().groups.map((item) => item.key);
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+  // Removing a list is one change: one update, carrying the new order and nothing to describe.
+  const solaris = group("Solaris").key;
+  states.length = 0;
+  session.remove([solaris, "not a group"]);
+  await settle();
+  assert.deepEqual(states, [
+    { groups: [], order: keys.filter((key) => key !== solaris), lookups: null },
+  ]);
+  // A list with nothing in the queue in it changes nothing, so no update goes out.
+  states.length = 0;
+  session.remove(["not a group"]);
+  session.remove([]);
+  await settle();
+  assert.deepEqual(states, []);
+
+  // Applying a batch that renames no folder describes only the groups that lost files:
+  // the queue's paths did not move, so the rest keep the descriptions the window holds.
+  session.confirm(group("Arrival").key);
+  await settle();
+  states.length = 0;
+  const preview = await session.preview();
+  const applied = await session.apply(preview.id);
+  assert.deepEqual(applied.renamed, []);
+  await settle();
+  assert.deepEqual(
+    states.map((state) => state.groups.map((item) => item.parsedTitle)),
+    [[]],
+  );
+  assert.deepEqual(
+    session.state().groups.map((item) => [item.parsedTitle, item.status]),
+    [["Severance", "suggested"]],
+  );
+});

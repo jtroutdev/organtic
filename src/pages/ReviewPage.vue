@@ -247,9 +247,8 @@ async function removeTicked() {
     store.selected =
       (rest.find((item) => item.status !== "confirmed") ?? rest[0])?.key ?? null;
   }
-  await run(async () => {
-    for (const key of keys) await api.remove(key);
-  });
+  // One request, so the queue is sent once however many groups were ticked.
+  await run(() => api.remove(keys));
   untick();
   announce(`Removed ${plural(keys.length, "group")} from the queue.`);
   await focusOn(".detail");

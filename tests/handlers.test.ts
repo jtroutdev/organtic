@@ -298,9 +298,18 @@ test("an argument of the wrong type is refused before it is used", async (t) => 
     ["openSourcePage", [{}]],
     ["moveFiles", [[{}], null]],
     ["moveFiles", ["not a list", null]],
+    // A list of group keys is accepted, but every key in it must be text.
+    ["remove", [[7]]],
+    ["remove", [["a group", null]]],
   ];
   for (const [name, args] of refusals)
-    await assert.rejects(() => call(name, ...args), /could not be read|could not be moved/, name);
+    await assert.rejects(
+      () => call(name, ...args),
+      /could not be read|could not be moved|could not be removed/,
+      name,
+    );
+  // A list of keys is passed on, and keys the queue does not hold are passed over.
+  assert.equal(await call("remove", ["one", "two"]), undefined);
   // The queue is untouched and each refusal was logged.
   assert.deepEqual(session.state().groups, []);
   const log = await logged();

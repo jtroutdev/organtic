@@ -55,7 +55,8 @@ export interface MediaApi {
   confirm(key: string): Promise<void>;
   confirmSuggested(): Promise<void>;
   cancelLookups(): Promise<void>;
-  remove(key: string): Promise<void>;
+  /** Takes groups out of the queue; a list of keys is removed as one change. */
+  remove(keys: string | string[]): Promise<void>;
   clear(): Promise<void>;
   include(fileId: string): Promise<void>;
   exclude(fileId: string, excluded: boolean): Promise<void>;
