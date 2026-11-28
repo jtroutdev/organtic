@@ -202,7 +202,13 @@ export async function registerHandlers(options: HandlerOptions): Promise<void> {
   register("confirm", async (key) => session.confirm(text(key, "group")));
   register("confirmSuggested", async () => session.confirmSuggested());
   register("cancelLookups", async () => session.cancelLookups());
-  register("remove", async (key) => session.remove(text(key, "group")));
+  register("remove", async (keys) => {
+    if (Array.isArray(keys)) {
+      if (keys.some((key) => typeof key !== "string"))
+        throw new Error("Those groups could not be removed.");
+      session.remove(keys);
+    } else session.remove(text(keys, "group"));
+  });
   register("clear", async () => session.clear());
   register("include", (fileId) => session.include(text(fileId, "file")));
   register("exclude", async (fileId, excluded) =>

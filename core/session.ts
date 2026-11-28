@@ -487,15 +487,20 @@ export class Session {
     this.changed(...hit);
   }
 
-  remove(key: string) {
-    const group = this.groups.get(key);
-    if (!group) return;
-    for (const id of group.fileIds) {
-      this.files.delete(id);
-      this.excluded.delete(id);
+  /** Takes groups out of the queue. A list is removed as one change, not one update each. */
+  remove(keys: string | string[]) {
+    let removed = false;
+    for (const key of typeof keys === "string" ? [keys] : keys) {
+      const group = this.groups.get(key);
+      if (!group) continue;
+      for (const id of group.fileIds) {
+        this.files.delete(id);
+        this.excluded.delete(id);
+      }
+      this.groups.delete(key);
+      removed = true;
     }
-    this.groups.delete(key);
-    this.changed();
+    if (removed) this.changed();
   }
 
   clear() {
@@ -1210,6 +1215,7 @@ export class Session {
       this.files.delete(fileId);
       this.excluded.delete(fileId);
     }
+    const left: Group[] = [];
     // Deleting the entry being visited is safe while iterating a Map.
     for (const group of this.groups.values()) {
       if (!group.fileIds.some((fileId) => gone.has(fileId))) continue;
@@ -1219,13 +1225,19 @@ export class Session {
         group.status = "review";
         group.reason =
           "The rest of this group was renamed. These files were left where they are.";
+        left.push(group);
       }
     }
-    this.relocate(renamed);
+    if (renamed.length) this.relocate(renamed);
+    // Nothing moved under the queue, so only the groups that lost files changed; the rest
+    // keep the descriptions they already have.
+    else this.changed(...left);
   }
 
   /** Follows folders that were renamed, by a batch or by undoing one, so queued files are still found. */
   relocate(renamed: { from: string; to: string }[]) {
+    // Every file and every group's description is rebuilt below, so there is nothing to do.
+    if (!renamed.length) return;
     const moved = (value: string) => {
       for (const { from, to } of renamed)
         if (isInside(value, from)) {
