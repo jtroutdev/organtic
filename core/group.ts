@@ -14,23 +14,34 @@ const folderOf = (path: string) => path.replace(/[\\/][^\\/]*$/, "");
  * What follows the show's name becomes its numbers or its episode name.
  */
 function adoptUnnumbered(files: MediaFile[]) {
-  const shows = files
-    .filter(({ parsed }) => !parsed.skip && parsed.kind === "tv" && parsed.title)
-    .map((file) => ({
-      title: file.parsed.title,
-      name: normalizeTitle(file.parsed.title),
-      folder: folderOf(file.path),
-    }));
+  // One candidate per folder and show name, not one per file: a flat folder holding
+  // thousands of episodes would otherwise be searched again for every file beside them.
+  const named = new Map<string, Map<string, string>>();
+  for (const { parsed, path } of files) {
+    if (parsed.skip || parsed.kind !== "tv" || !parsed.title) continue;
+    const folder = folderOf(path);
+    let names = named.get(folder);
+    if (!names) named.set(folder, (names = new Map()));
+    const name = normalizeTitle(parsed.title);
+    // The first file to name a show gives the title the adopted files take.
+    if (!names.has(name)) names.set(name, parsed.title);
+  }
+  // Longest name first, so a show whose name starts with another's still wins.
+  const shows = new Map(
+    [...named].map(([folder, names]) => [
+      folder,
+      Array.from(names, ([name, title]) => ({ name, title })).sort(
+        (a, b) => b.name.length - a.name.length,
+      ),
+    ]),
+  );
   for (const file of files) {
     const { parsed } = file;
     if (parsed.skip || parsed.kind !== "movie" || parsed.year !== null) continue;
     const own = normalizeTitle(parsed.title);
     const show = shows
-      .filter(
-        (item) =>
-          item.folder === folderOf(file.path) && own.startsWith(`${item.name} `),
-      )
-      .sort((a, b) => b.name.length - a.name.length)[0];
+      .get(folderOf(file.path))
+      ?.find((item) => own.startsWith(`${item.name} `));
     if (!show) continue;
     const rest = own.slice(show.name.length + 1);
     const joined = /^([1-9]\d?)(?!00)(\d{2})(?: (.+))?$/.exec(rest);

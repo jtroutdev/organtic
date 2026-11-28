@@ -944,3 +944,49 @@ test("sibling import folders whose names start alike are told apart in the previ
   await fs.access(path.join(dir, "Arrival"));
   await fs.access(path.join(dir, "Arrival 2"));
 });
+
+test("a file's group is found from the index after merges, splits and removals", async (t) => {
+  const { session, group } = await setup(t, [
+    "Severance.S01E01.mkv",
+    "Severence.S01E02.mkv",
+    "Solaris.mkv",
+  ]);
+  const severance = group("Severance").key;
+  const moved = group("Severence").files[0]!.id;
+  await session.moveFiles([moved], severance);
+
+  // Excluding the moved file must mark its new group, not the one it came from.
+  session.exclude(moved, true);
+  const held = () => session.state().groups.find((g) => g.key === severance)!;
+  assert.deepEqual(
+    held().files.map((file) => [file.label, file.excluded]),
+    [["S01E01", false], ["S01E02", true]],
+  );
+  session.exclude(moved, false);
+  assert.equal(held().files[1]!.excluded, false);
+
+  // And correcting its numbers must renumber it inside that group.
+  await session.setEpisode(moved, { season: 2, episode: 5, episodeEnd: null });
+  assert.equal(held().files[1]!.label, "S02E05");
+
+  // Split it back out: the index follows it into the group of its own.
+  const split = await session.moveFiles([moved], null);
+  assert.notEqual(split, severance);
+  session.exclude(moved, true);
+  assert.equal(
+    session.state().groups.find((g) => g.key === split)!.files[0]!.excluded,
+    true,
+  );
+
+  // A removed group takes its files out of the index, so nothing claims them after.
+  const solaris = group("Solaris");
+  const dropped = solaris.files[0]!.id;
+  session.remove(solaris.key);
+  session.exclude(dropped, true);
+  assert.equal(session.state().groups.some((g) => g.key === solaris.key), false);
+  await assert.rejects(
+    session.setEpisode(dropped, { season: 1, episode: 1, episodeEnd: null }),
+    /no longer in the queue/,
+  );
+  await assert.rejects(session.moveFiles([dropped], split), /no longer in the queue/);
+});
