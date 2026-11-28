@@ -1,4 +1,6 @@
 import * as fs from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { createInterface } from "node:readline";
 import type { Stats } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
 import path from "node:path";
@@ -1243,26 +1245,47 @@ async function runPlan(
   }
 }
 
+/**
+ * Reads one record a line at a time. A record at the import limit is tens of megabytes, so the
+ * whole file is never held as one string: only the events it parses to are kept.
+ */
 async function readJournal(file: string, repairTail = false) {
-  const raw = await fs.readFile(file, "utf8");
-  const lines = raw.split("\n");
   const events: JournalEvent[] = [];
-  for (const [i, line] of lines.entries()) {
-    // A record at the import limit runs to about 45,000 lines; reading it gives way to other
-    // work now and then, after the plan, which is the longest line, and every few thousand.
-    if (i === 1 || (i && i % (YIELD_EVERY * 10) === 0)) await giveWay();
-    if (!line.trim()) continue;
-    try {
-      events.push(JSON.parse(line));
-    } catch {
-      if (i < lines.length - 1)
+  // Bytes read so far, counting one line separator for each line. Only used to decide whether
+  // an unreadable last line was cut off part-way, and where to cut the file back to.
+  let read = 0;
+  let broken: number | null = null;
+  let index = 0;
+  const stream = createReadStream(file);
+  try {
+    for await (const line of createInterface({ input: stream })) {
+      // Anything after an unreadable line means the damage is inside a finished record.
+      if (broken !== null)
         throw new Error("Journal is damaged; manual recovery is required.");
-      if (repairTail)
-        await fs.truncate(
-          file,
-          Buffer.byteLength(raw.slice(0, raw.lastIndexOf("\n") + 1)),
-        );
+      const began = read;
+      read += Buffer.byteLength(line, "utf8") + 1;
+      // A record at the import limit runs to about 45,000 lines; reading it gives way to other
+      // work now and then, after the plan, which is the longest line, and every few thousand.
+      if (index === 1 || (index && index % (YIELD_EVERY * 10) === 0)) await giveWay();
+      index++;
+      if (!line.trim()) continue;
+      try {
+        events.push(JSON.parse(line));
+      } catch {
+        broken = began;
+      }
     }
+  } finally {
+    stream.destroy();
+  }
+  if (broken !== null) {
+    const { size } = await fs.stat(file);
+    // Only a last line with no separator after it is a write cut off part-way. If the count
+    // does not land on the file's own length, the separators are not what this assumed, so
+    // nothing is cut.
+    if (read !== size + 1)
+      throw new Error("Journal is damaged; manual recovery is required.");
+    if (repairTail) await fs.truncate(file, broken);
   }
   const first = events[0];
   if (first?.type !== "plan") throw new Error("Journal is missing its plan.");
@@ -1329,24 +1352,95 @@ const sourceOf = (op: Operation) =>
 /** What `history` remembers of each record between calls, so an unchanged one is not read again. */
 export type HistoryCache = Map<string, { stamp: string; summary: BatchSummary }>;
 
+/** The summaries kept beside the records, so a restart does not read every record again. */
+const HISTORY_INDEX = "history-index.json";
+const HISTORY_INDEX_VERSION = 1;
+
+/**
+ * Reads that index. It is only a cache: a missing, unreadable, older or partly nonsensical one
+ * means those records are read again, never that History is wrong. Each entry still carries the
+ * record's size and modification time, so an entry that does not match its record is not used.
+ */
+export async function readHistoryIndex(journalDir: string): Promise<HistoryCache> {
+  const cache: HistoryCache = new Map();
+  let held: unknown;
+  try {
+    held = JSON.parse(await fs.readFile(path.join(journalDir, HISTORY_INDEX), "utf8"));
+  } catch {
+    return cache;
+  }
+  if (typeof held !== "object" || held === null) return cache;
+  const { version, records } = held as { version?: unknown; records?: unknown };
+  if (version !== HISTORY_INDEX_VERSION) return cache;
+  if (typeof records !== "object" || records === null) return cache;
+  for (const [name, entry] of Object.entries(records as Record<string, unknown>)) {
+    if (!name.endsWith(".jsonl") || typeof entry !== "object" || entry === null) continue;
+    const { stamp, summary } = entry as { stamp?: unknown; summary?: unknown };
+    if (typeof stamp !== "string") continue;
+    if (typeof summary !== "object" || summary === null) continue;
+    const { id, status, createdAt, count } = summary as Record<string, unknown>;
+    if (typeof id !== "string" || typeof status !== "string") continue;
+    if (typeof createdAt !== "string" || typeof count !== "number") continue;
+    cache.set(name, { stamp, summary: summary as BatchSummary });
+  }
+  return cache;
+}
+
+/**
+ * Writes that index: in full to a temporary file beside it, flushed, then renamed over it, so a
+ * crash part-way leaves the old index or the new one. A failure is passed over, since the worst
+ * it costs is reading the records again.
+ */
+export async function writeHistoryIndex(
+  journalDir: string,
+  cache: HistoryCache,
+): Promise<void> {
+  const file = path.join(journalDir, HISTORY_INDEX);
+  const temporary = `${file}.${process.pid}.tmp`;
+  try {
+    const body = JSON.stringify({
+      version: HISTORY_INDEX_VERSION,
+      records: Object.fromEntries(cache),
+    });
+    const handle = await fs.open(temporary, "w", 0o600);
+    try {
+      await handle.writeFile(body);
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await fs.rename(temporary, file);
+  } catch {
+    await fs.rm(temporary, { force: true }).catch(() => {});
+  }
+}
+
 /**
  * Every batch, newest first, without its changes: `batchChanges` loads those for one batch.
- * Pass the same `cache` each time to read only the records that changed since.
+ * Pass the same `cache` each time to read only the records that changed since; given one, the
+ * index beside the records is written whenever that cache changes, so the next start reads it
+ * instead of every record.
  */
 export async function history(
   journalDir: string,
-  cache: HistoryCache = new Map(),
+  cache?: HistoryCache,
 ): Promise<BatchSummary[]> {
+  const held: HistoryCache = cache ?? new Map();
+  let moved = false;
   await fs.mkdir(journalDir, { recursive: true, mode: 0o700 });
   const names = (await fs.readdir(journalDir)).filter((name) => name.endsWith(".jsonl"));
-  for (const name of cache.keys()) if (!names.includes(name)) cache.delete(name);
+  for (const name of held.keys())
+    if (!names.includes(name)) {
+      held.delete(name);
+      moved = true;
+    }
   const result: BatchSummary[] = [];
   for (const name of names) {
     const file = path.join(journalDir, name);
     const stat = await fs.stat(file).catch(() => undefined);
     if (!stat) continue;
     const stamp = `${stat.mtimeMs}:${stat.size}`;
-    const cached = cache.get(name);
+    const cached = held.get(name);
     if (cached?.stamp === stamp) {
       result.push(cached.summary);
       continue;
@@ -1382,9 +1476,11 @@ export async function history(
         root: "",
       };
     }
-    cache.set(name, { stamp, summary });
+    held.set(name, { stamp, summary });
+    moved = true;
     result.push(summary);
   }
+  if (cache && moved) await writeHistoryIndex(journalDir, cache);
   return result.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 

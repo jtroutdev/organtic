@@ -13,6 +13,7 @@ import {
   undoBatch,
   onSameDrive,
   history,
+  readHistoryIndex,
   removeBatch,
 } from "../core/files.ts";
 import type { HistoryCache } from "../core/files.ts";
@@ -1060,4 +1061,40 @@ test("a folder is canonicalized once, and aliases still collapse to one file", a
   const linked = await scanPaths([path.join(dir, "alias")]);
   assert.deepEqual(linked.files, []);
   assert.match(linked.unread[0]!.reason, /links are not followed/);
+});
+
+test("History keeps its summaries beside the records, so a restart reads no record it already knows", async (t) => {
+  const f = await fixture(t);
+  const plan = await planInPlace([{ file: f.file, media }]);
+  await applyPlan(plan, f.journals);
+  const record = path.join(f.journals, `${plan.id}.jsonl`);
+  // A modification time this test sets itself, so restoring it below is exact.
+  const when = new Date(1_700_000_000_000);
+  await fs.utimes(record, when, when);
+
+  // Opening History writes the index beside the records.
+  const first = await history(f.journals, new Map());
+  const index = path.join(f.journals, "history-index.json");
+  const held = JSON.parse(await fs.readFile(index, "utf8"));
+  assert.equal(held.version, 1);
+  assert.deepEqual(held.records[`${plan.id}.jsonl`].summary, first[0]);
+
+  // A fresh start reads that index and does not parse the record again: the record is replaced
+  // with nonsense of the same length and modification time, which the index cannot have read.
+  const { size } = await fs.stat(record);
+  await fs.writeFile(record, "x".repeat(size));
+  await fs.utimes(record, when, when);
+  const cache = await readHistoryIndex(f.journals);
+  assert.deepEqual(await history(f.journals, cache), first);
+  // Without the index the same record is read, and reads as damaged.
+  assert.equal((await history(f.journals, new Map()))[0]!.status, "damaged");
+
+  // An index that cannot be read, or that was written by a newer version, is simply ignored.
+  for (const junk of ["not json", '{"version":2,"records":{}}', '{"records":null}', "[]"]) {
+    await fs.writeFile(index, junk);
+    assert.deepEqual(await readHistoryIndex(f.journals), new Map());
+  }
+  await fs.rm(index);
+  assert.deepEqual(await readHistoryIndex(f.journals), new Map());
+  assert.deepEqual(await readHistoryIndex(path.join(f.journals, "nowhere")), new Map());
 });
