@@ -36,7 +36,7 @@ The referenced [FileBot fork's license](https://github.com/mobeigi/filebot/blob/
 | `core/api.ts`         | The contract between the interface and the app, implemented over IPC and by the browser preview               |
 | `core/naming.ts`      | Naming templates (Plex preset), template validation, portable name formatting                                 |
 | `core/versions.ts`    | Copies of one title that would take the same name: the best keeps it, the others are named as versions        |
-| `core/paths.ts`       | The folder a batch's changes share, so History names it once and shows each path from it                      |
+| `core/paths.ts`       | Paths as text: the folder a batch's changes share, and whether one path lies inside or below another           |
 | `core/media.ts`       | Supported extensions and NFO serialization                                                                    |
 | `core/types.ts`       | Shared types for files, matches, plans, and journal events                                                    |
 | `core/providers.ts`   | TMDB, TVmaze and Kitsu adapters, and TheTVDB for the titles of anime specials; normalization, episode resolution, bounded memory cache, timeout and 429 retry |
