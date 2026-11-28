@@ -915,3 +915,32 @@ test("a choice must name a candidate by its number, not by a property of the lis
   assert.equal(group("Solaris").status, "confirmed");
   assert.equal(group("Solaris").chosen, 1);
 });
+
+test("sibling import folders whose names start alike are told apart in the preview", async (t) => {
+  const { session, group, dir } = await setup(t, [
+    "Arrival/inner/Arrival.2016.mkv",
+    "Arrival 2/inner/Solaris.2002.mkv",
+  ]);
+  session.clear();
+  // The shorter root is imported first, so a prefix match would claim the longer one's files.
+  await session.addFiles(
+    await scanPaths([path.join(dir, "Arrival"), path.join(dir, "Arrival 2")]),
+  );
+  await fs.mkdir(path.join(dir, "library"));
+  for (const title of ["Arrival", "Solaris"])
+    session.setDestination(group(title).key, path.join(dir, "library"));
+  session.confirmSuggested();
+
+  const preview = await session.preview();
+  // Each emptied folder is named relative to the root it was imported from, not the one
+  // whose name it begins with: "2/inner" would mean the wrong root was used.
+  assert.deepEqual(preview.removedFolders.sort(), ["inner", "inner"]);
+  await session.apply(preview.id);
+  await fs.access(path.join(dir, "library/Arrival (2016)/Arrival (2016).mkv"));
+  await fs.access(path.join(dir, "library/Solaris (2002)/Solaris (2002).mkv"));
+  // Both source folders are gone from under their own roots, and the roots themselves stay.
+  await assert.rejects(fs.access(path.join(dir, "Arrival/inner")));
+  await assert.rejects(fs.access(path.join(dir, "Arrival 2/inner")));
+  await fs.access(path.join(dir, "Arrival"));
+  await fs.access(path.join(dir, "Arrival 2"));
+});
