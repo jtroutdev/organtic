@@ -21,9 +21,12 @@ import path from "node:path";
 import { monitorEventLoopDelay, performance } from "node:perf_hooks";
 import { parseArgs } from "node:util";
 import { applyPlan, batchChanges, checkRoom, createPlan, history, scanPaths, undoBatch } from "../core/files.ts";
+import { groupFiles } from "../core/group.ts";
+import { parseMediaPath } from "../core/parse.ts";
 import { LIMITS, Providers } from "../core/providers.ts";
 import { Session } from "../core/session.ts";
 import { DEFAULT_SETTINGS } from "../core/settings.ts";
+import type { MediaFile } from "../core/types.ts";
 
 type Library = { name: string; files: number; shows: number; flat: boolean };
 
@@ -61,13 +64,42 @@ function episodes(library: Library) {
   }));
 }
 
+const dotted = (title: string, episode: number) =>
+  `${title.replace(" ", ".")}.S01E${String(episode).padStart(2, "0")}.1080p.WEB.mkv`;
+
+/**
+ * The same library in memory, as one flat folder, with half as many files again that carry
+ * no number and are named after their show: what grouping alone costs, with no disk in it.
+ */
+function flatFiles(library: Library): MediaFile[] {
+  const root = "/library";
+  const files: MediaFile[] = [];
+  const add = (name: string) => {
+    const where = `${root}/${name}`;
+    files.push({
+      id: String(files.length),
+      path: where,
+      root,
+      name,
+      size: 1,
+      parsed: parseMediaPath(where, root),
+    });
+  };
+  for (const show of episodes(library)) {
+    for (let episode = 1; episode <= show.count; episode++) add(dotted(show.title, episode));
+    for (let extra = 1; extra <= Math.ceil(show.count / 2); extra++)
+      add(`${show.title} - ${WORDS[extra % WORDS.length]} ${WORDS[Math.floor(extra / WORDS.length) % WORDS.length]}.mkv`);
+  }
+  return files;
+}
+
 async function build(root: string, library: Library) {
   const shows = episodes(library);
   for (const show of shows) {
     const folder = library.flat ? root : path.join(root, show.title, "Season 01");
     await fs.mkdir(folder, { recursive: true });
     for (let episode = 1; episode <= show.count; episode++) {
-      const name = `${show.title.replace(" ", ".")}.S01E${String(episode).padStart(2, "0")}.1080p.WEB.mkv`;
+      const name = dotted(show.title, episode);
       await fs.writeFile(path.join(folder, name), `${show.title} ${episode}`);
     }
   }
@@ -131,19 +163,20 @@ async function run(library: Library, base: string) {
     // Each push is serialised as the desktop app does when it sends the queue to the window.
     let pushes = 0;
     let bytes = 0;
+    const planner = {
+      // As the desktop app plans: the plan, then the room check.
+      createPlan: async (selections, options) => {
+        const plan = await createPlan(selections, options);
+        if (plan.operations.length)
+          for (const message of await checkRoom(plan, journalDir)) plan.errors.push(message);
+        return plan;
+      },
+      applyPlan: (plan, signal) => applyPlan(plan, journalDir, undefined, signal),
+    } satisfies ConstructorParameters<typeof Session>[0]["planner"];
     const session = new Session({
       providers,
       settings: DEFAULT_SETTINGS,
-      planner: {
-        // As the desktop app plans: the plan, then the room check.
-        createPlan: async (selections, options) => {
-          const plan = await createPlan(selections, options);
-          if (plan.operations.length)
-            for (const message of await checkRoom(plan, journalDir)) plan.errors.push(message);
-          return plan;
-        },
-        applyPlan: (plan, signal) => applyPlan(plan, journalDir, undefined, signal),
-      },
+      planner,
       onUpdate: (update) => {
         pushes++;
         bytes += JSON.stringify(update).length;
@@ -189,13 +222,41 @@ async function run(library: Library, base: string) {
     const batch = listed.value;
     const undone = await phase(() => undoBatch(batch.id, journalDir));
 
+    // Interactive editing, which the phases above never touch: selecting the whole queue and
+    // merging it into one group, and grouping a flat folder of files without numbers. Both are
+    // the main process's own work on the files it already holds, with no disk or network in them.
+    const quiet = new Session({
+      providers,
+      // No lookups: this measures the editing, not the catalogue.
+      settings: { ...DEFAULT_SETTINGS, autoMatch: false },
+      planner,
+      onUpdate: () => {},
+      defer: (flush) => flush(),
+    });
+    await quiet.addFiles(await scanPaths([media]));
+    const queued = quiet.state().groups;
+    const everything = queued.flatMap((group) => group.files.map((file) => file.id));
+    // Only the merge is timed: the import that filled this session is measured above.
+    const merged = await phase(async () => {
+      await quiet.moveFiles(everything, queued[0]!.key);
+      return { groups: queued.length, files: everything.length };
+    });
+    // Both hold the main process for as long as they take, since neither gives way: the
+    // event loop is never sampled during them, so "blocked" reads 0 and the time is the
+    // hold-up. Likewise only the grouping is timed, not the parsing that made the files.
+    const flat = flatFiles(library);
+    const grouped = await phase(async () => ({
+      files: flat.length,
+      groups: groupFiles(flat).groups.length,
+    }));
+
     return {
       library,
       groups: queue.groups.length,
       suggested,
       pushes: lookupPushes,
       bytes: lookupBytes,
-      phases: { imported, preview, applied, listed, undone },
+      phases: { imported, preview, applied, listed, undone, merged, grouped },
       unknown,
       asked,
     };
@@ -240,8 +301,15 @@ for (const library of libraries) {
     applied: "apply",
     listed: "History",
     undone: "undo",
+    merged: "merging every group",
+    grouped: "grouping a flat folder",
   };
   console.log(`  Held up longest during ${names[worst[0]]}.`);
+  const { merged, grouped } = result.phases;
+  console.log(
+    `  Interactive: merging all ${merged.value.groups} groups (${merged.value.files.toLocaleString("en")} files) ${seconds(merged.elapsed)}, ` +
+      `grouping ${grouped.value.files.toLocaleString("en")} files in one folder, half of them unnumbered, into ${grouped.value.groups} groups ${seconds(grouped.elapsed)}.`,
+  );
   if (result.suggested !== library.shows)
     console.warn(`  ${result.suggested} of ${library.shows} shows were suggested; the stand-in catalogue needs a look.`);
   // What the sources' limits would add if they answered at once: at least this long to ask them all.

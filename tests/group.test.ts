@@ -109,3 +109,32 @@ test("ranks candidates and is confident only about a clear winner", () => {
     false,
   );
 });
+
+test("an unnumbered file joins the longest show name it starts with, in its own folder", () => {
+  const files = [
+    // Two shows in one folder, one name a prefix of the other.
+    "Mix/Doctor Who S01E01.mkv",
+    "Mix/Doctor Who Confidential S01E01.mkv",
+    "Mix/Doctor Who Confidential - Behind the Sofa.mkv",
+    // A show named by several files, spelt differently: the first spelling is the title.
+    "Mix/The Simpsons S08E11.avi",
+    "Mix/the simpsons S08E12.avi",
+    "Mix/The Simpsons - Lisa the Vegetarian.avi",
+  ].map(file);
+  const { groups } = groupFiles(files);
+  assert.deepEqual(
+    groups.map((group) => [group.kind, group.title, group.fileIds.length]),
+    [
+      ["tv", "Doctor Who", 1],
+      ["tv", "Doctor Who Confidential", 2],
+      ["tv", "The Simpsons", 3],
+    ],
+  );
+  assert.deepEqual(
+    [files[2]!, files[5]!].map(({ parsed }) => [parsed.title, parsed.episodeTitle]),
+    [
+      ["Doctor Who Confidential", "behind the sofa"],
+      ["The Simpsons", "lisa the vegetarian"],
+    ],
+  );
+});

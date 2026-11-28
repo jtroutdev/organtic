@@ -114,6 +114,11 @@ export class Session {
   private excluded = new Set<string>();
   private unread: QueueState["unread"] = [];
   private groups = new Map<string, Group>();
+  /**
+   * Which group holds each file. Every change to a group's `fileIds` keeps this in step,
+   * so a file's group is found without scanning the queue.
+   */
+  private ownerOf = new Map<string, string>();
   private plan: { plan: Plan; fileIds: string[] } | null = null;
   private manualGroups = 0;
   private run = newRun();
@@ -405,6 +410,7 @@ export class Session {
         group.anime = this.looksLikeAnime(group);
         this.groups.set(group.key, group);
       }
+      for (const id of found.fileIds) this.ownerOf.set(id, group.key);
       touched.push(group);
     }
     this.listsChanged = true;
@@ -493,6 +499,7 @@ export class Session {
     for (const id of group.fileIds) {
       this.files.delete(id);
       this.excluded.delete(id);
+      this.ownerOf.delete(id);
     }
     this.groups.delete(key);
     this.changed();
@@ -501,6 +508,7 @@ export class Session {
   clear() {
     this.files.clear();
     this.groups.clear();
+    this.ownerOf.clear();
     this.excluded.clear();
     this.unread = [];
     this.changedAll();
@@ -519,8 +527,9 @@ export class Session {
     if (!this.files.has(fileId)) return;
     if (excluded) this.excluded.add(fileId);
     else this.excluded.delete(fileId);
-    const owner = [...this.groups.values()].find((group) => group.fileIds.includes(fileId));
-    if (owner) this.changed(owner);
+    const owner = this.ownerOf.get(fileId);
+    const group = owner === undefined ? undefined : this.groups.get(owner);
+    if (group) this.changed(group);
     else this.changed();
   }
 
@@ -533,8 +542,10 @@ export class Session {
     if (!Array.isArray(fileIds) || !fileIds.length)
       throw new Error("Choose at least one file to move.");
     const moving = new Set(fileIds);
-    const owner = (fileId: string) =>
-      [...this.groups.values()].find((item) => item.fileIds.includes(fileId));
+    const owner = (fileId: string) => {
+      const key = this.ownerOf.get(fileId);
+      return key === undefined ? undefined : this.groups.get(key);
+    };
     const sources = new Set<Group>();
     for (const fileId of moving) {
       const from = owner(fileId);
@@ -573,6 +584,7 @@ export class Session {
       from.fileIds = from.fileIds.filter((fileId) => !moving.has(fileId));
       leaving.forEach((fileId) => from.results.delete(fileId));
       target.fileIds.push(...leaving);
+      for (const fileId of leaving) this.ownerOf.set(fileId, target.key);
       if (!from.fileIds.length) this.groups.delete(from.key);
     }
     this.changed(...sources, target);
@@ -593,9 +605,8 @@ export class Session {
    */
   async setEpisode(fileId: string, numbers: EpisodeNumbers) {
     const file = this.files.get(fileId);
-    const group = [...this.groups.values()].find((item) =>
-      item.fileIds.includes(fileId),
-    );
+    const owner = this.ownerOf.get(fileId);
+    const group = owner === undefined ? undefined : this.groups.get(owner);
     if (!file || !group) throw new Error("That file is no longer in the queue.");
     // The window's request is not trusted to be whole, whatever its type says.
     // oxlint-disable-next-line typescript/no-useless-default-assignment
@@ -1209,6 +1220,7 @@ export class Session {
     for (const fileId of gone) {
       this.files.delete(fileId);
       this.excluded.delete(fileId);
+      this.ownerOf.delete(fileId);
     }
     // Deleting the entry being visited is safe while iterating a Map.
     for (const group of this.groups.values()) {
