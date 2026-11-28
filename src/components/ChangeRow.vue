@@ -33,7 +33,9 @@ defineProps<{
 </template>
 
 <style scoped>
-.oprow{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);column-gap:var(--space-surface);padding:var(--space-dense) 0;border-bottom:1px solid var(--color-outline-subtle)}
+/* A batch can run to thousands of changes; rows out of sight are not drawn, and until one has
+   been it takes a single line's height. */
+.oprow{content-visibility:auto;contain-intrinsic-size:auto var(--size-change-row);display:grid;grid-template-columns:minmax(0,2fr) minmax(0,3fr);column-gap:var(--space-surface);padding:var(--space-dense) 0;border-bottom:1px solid var(--color-outline-subtle)}
 /* One width for every pill's column, so the names line up from row to row. */
 .oprow.told{grid-template-columns:minmax(0,2fr) minmax(0,3fr) calc(var(--size-control)*3);align-items:center;row-gap:var(--space-dense)}
 .oprow.told>.pill{justify-self:end}

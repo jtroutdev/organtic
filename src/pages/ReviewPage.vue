@@ -271,6 +271,8 @@ const canMove = computed(
 const pickedHere = computed(() =>
   picked.value.filter((id) => group.value?.files.some((file) => file.id === id)),
 );
+// A show with a thousand episodes asks this once per row, so it is a set, not a search.
+const pickedSet = computed(() => new Set(picked.value));
 const allPicked = computed(
   () => !!group.value && pickedHere.value.length === group.value.files.length,
 );
@@ -837,7 +839,7 @@ async function search() {
                 <span class="pick">
                   <TickBox
                     v-if="canMove"
-                    :checked="picked.includes(file.id)"
+                    :checked="pickedSet.has(file.id)"
                     :value="file.id"
                     :aria-label="`Select ${file.source}`"
                     @change="pickFile(file.id, ($event.target as HTMLInputElement).checked)"

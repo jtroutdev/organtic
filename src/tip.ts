@@ -4,7 +4,9 @@ import type { Directive } from "vue";
  * `v-tip`: a short note about a control, shown for the pointer and for keyboard focus alike.
  * `v-tip.clipped` shows it only while the element's own text is cut short.
  *
- * One tooltip serves the whole app. It is a popover, so it sits above an open dialog.
+ * One tooltip serves the whole app. It is a popover, so it sits above an open dialog. The page
+ * listens once for all of them rather than each element listening for itself: a group of a
+ * thousand files would otherwise mount thousands of listeners.
  */
 interface Tip {
   text: string;
@@ -65,9 +67,29 @@ function show(element: HTMLElement) {
   box.style.left = `${Math.max(left, gap)}px`;
 }
 
+/** The element the event is on or inside that has a tip, if there is one. */
+const tipped = (target: EventTarget | null) =>
+  target instanceof Element
+    ? (target.closest<HTMLElement>("[data-tip]") ?? undefined)
+    : undefined;
+
 addEventListener("keydown", (event) => event.key === "Escape" && hide());
 addEventListener("scroll", hide, true);
 addEventListener("resize", hide);
+addEventListener("pointerover", (event) => {
+  const element = tipped(event.target);
+  if (element === owner) return;
+  // Leaving a tipped control, or arriving at another, takes the tooltip away at once.
+  hide();
+  if (element) timer = setTimeout(() => show(element), HOVER_DELAY);
+});
+addEventListener("pointerdown", hide);
+// Only for focus that arrived by keyboard: a click has the pointer's own tooltip.
+addEventListener("focusin", (event) => {
+  const element = tipped(event.target);
+  if (element && (event.target as Element).matches(":focus-visible")) show(element);
+});
+addEventListener("focusout", hide);
 
 export const vTip: Directive<HTMLElement, string | undefined> = {
   mounted(element, binding) {
@@ -76,17 +98,8 @@ export const vTip: Directive<HTMLElement, string | undefined> = {
       clipped: !!binding.modifiers.clipped,
       described: null,
     });
-    element.addEventListener("pointerenter", () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => show(element), HOVER_DELAY);
-    });
-    element.addEventListener("pointerleave", hide);
-    element.addEventListener("pointerdown", hide);
-    // Only for focus that arrived by keyboard: a click has the pointer's own tooltip.
-    element.addEventListener("focusin", (event) => {
-      if ((event.target as Element).matches(":focus-visible")) show(element);
-    });
-    element.addEventListener("focusout", hide);
+    // How the page's own listeners find it again.
+    element.dataset.tip = "";
   },
   updated(element, binding) {
     const tip = tips.get(element);
