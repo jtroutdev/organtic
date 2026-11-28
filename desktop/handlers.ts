@@ -85,7 +85,9 @@ export type HandlerOptions = {
   notice?: string;
 };
 
-// Handlers receive renderer input; the session and core validate what they are given.
+// Handlers receive renderer input. Its types say nothing about what actually arrives, so each
+// argument is checked here before it is passed on, and the session and core check their own
+// invariants again: the browser preview drives the same core without this boundary.
 type Handlers = {
   [K in Exclude<keyof MediaApi, "desktop" | "onQueue" | "onProgress" | "addDropped">]: MediaApi[K];
 } & { addPaths(paths: string[]): Promise<void> };
@@ -124,6 +126,11 @@ export async function registerHandlers(options: HandlerOptions): Promise<void> {
         throw error;
       }
     });
+  /** An argument the window said was text. Anything else is refused before it is used. */
+  const text = (value: unknown, what: string): string => {
+    if (typeof value !== "string") throw new Error(`That ${what} could not be read.`);
+    return value;
+  };
   const confirmDialog = async (title: string, message: string, detail: string, action: string) => {
     const response = await dialogs.showMessageBox({
       type: "question",
@@ -190,27 +197,36 @@ export async function registerHandlers(options: HandlerOptions): Promise<void> {
       throw new Error("Those files could not be added.");
     await session.addFiles(await scanPaths(paths));
   });
-  register("search", (key, request) => session.search(key, request));
-  register("choose", (key, index) => session.choose(key, index));
-  register("confirm", async (key) => session.confirm(key));
+  register("search", (key, request) => session.search(text(key, "group"), request));
+  register("choose", (key, index) => session.choose(text(key, "group"), index));
+  register("confirm", async (key) => session.confirm(text(key, "group")));
   register("confirmSuggested", async () => session.confirmSuggested());
   register("cancelLookups", async () => session.cancelLookups());
-  register("remove", async (key) => session.remove(key));
+  register("remove", async (key) => session.remove(text(key, "group")));
   register("clear", async () => session.clear());
-  register("include", (fileId) => session.include(fileId));
-  register("exclude", async (fileId, excluded) => session.exclude(fileId, excluded === true));
-  register("moveFiles", (fileIds, targetKey) =>
-    session.moveFiles(fileIds, typeof targetKey === "string" ? targetKey : null),
+  register("include", (fileId) => session.include(text(fileId, "file")));
+  register("exclude", async (fileId, excluded) =>
+    session.exclude(text(fileId, "file"), excluded === true),
   );
+  register("moveFiles", (fileIds, targetKey) => {
+    if (!Array.isArray(fileIds) || fileIds.some((id) => typeof id !== "string"))
+      throw new Error("Those files could not be moved.");
+    return session.moveFiles(fileIds, typeof targetKey === "string" ? targetKey : null);
+  });
   register("setNumbering", (key, numbering) =>
-    session.setNumbering(key, numbering === "tvdb" ? "tvdb" : "tmdb"),
+    session.setNumbering(text(key, "group"), numbering === "tvdb" ? "tvdb" : "tmdb"),
   );
   register("setOrdering", (key, id, keepNumbers) =>
-    session.setOrdering(key, typeof id === "string" ? id : null, keepNumbers === true),
+    session.setOrdering(
+      text(key, "group"),
+      typeof id === "string" ? id : null,
+      keepNumbers === true,
+    ),
   );
-  register("setEpisode", (fileId, numbers) => session.setEpisode(fileId, numbers));
+  register("setEpisode", (fileId, numbers) => session.setEpisode(text(fileId, "file"), numbers));
   register("chooseDestination", async (key) => {
-    const group = session.state().groups.find((item) => item.key === key);
+    const wanted = text(key, "group");
+    const group = session.state().groups.find((item) => item.key === wanted);
     if (!group) throw new Error("That group is no longer in the queue.");
     const result = await dialogs.showOpenDialog({
       title: "Organise inside this folder",
@@ -228,7 +244,7 @@ export async function registerHandlers(options: HandlerOptions): Promise<void> {
     await remember(folder);
     session.setDestination(key, chosen);
   });
-  register("resetDestination", async (key) => session.setDestination(key, null));
+  register("resetDestination", async (key) => session.setDestination(text(key, "group"), null));
   register("preview", () => session.preview());
   /**
    * Reports a batch's progress to the window about ten times a second, and always its start
@@ -246,7 +262,7 @@ export async function registerHandlers(options: HandlerOptions): Promise<void> {
   register("stop", async () => guard.stop());
   register("apply", (id) =>
     guard.run("apply", async (signal) => {
-      const plan = session.pending(id);
+      const plan = session.pending(text(id, "preview"));
       if (!plan) throw new Error("The queue changed. Open Preview again first.");
       const confirmed = await confirmDialog(
         "Apply these changes?",
@@ -262,7 +278,7 @@ export async function registerHandlers(options: HandlerOptions): Promise<void> {
   // Records that have not changed since History last opened are not read again.
   const historyCache: HistoryCache = new Map();
   register("history", () => history(journalDir, historyCache));
-  register("batch", (id) => batchChanges(String(id), journalDir));
+  register("batch", (id) => batchChanges(text(id, "batch"), journalDir));
   register("removeBatch", async (id) => {
     if (guard.busy) throw new Error("A batch is running. Remove this one once it has finished.");
     const confirmed = await confirmDialog(
@@ -272,11 +288,12 @@ export async function registerHandlers(options: HandlerOptions): Promise<void> {
       "Remove from History",
     );
     if (!confirmed) return { canceled: true };
-    await removeBatch(String(id), journalDir);
+    await removeBatch(text(id, "batch"), journalDir);
     return {};
   });
   register("undo", (id) =>
     guard.run("undo", async (signal) => {
+      const batchId = text(id, "batch");
       const confirmed = await confirmDialog(
         "Undo this batch?",
         "Restore the original names and locations?",
@@ -287,7 +304,7 @@ export async function registerHandlers(options: HandlerOptions): Promise<void> {
       // Files still queued under a folder that got its old name back are followed there,
       // also when the undo stopped part-way.
       try {
-        const { renamed } = await undoBatch(id, journalDir, undefined, signal, progressOf("undo"));
+        const { renamed } = await undoBatch(batchId, journalDir, undefined, signal, progressOf("undo"));
         if (renamed.length) session.relocate(renamed);
       } catch (error) {
         const partial = (error as { renamed?: unknown } | null)?.renamed;
@@ -305,12 +322,12 @@ export async function registerHandlers(options: HandlerOptions): Promise<void> {
     return settings;
   });
   register("setToken", async (token) => {
-    const sources = await keys.setToken(token);
+    const sources = await keys.setToken(text(token, "token"));
     // Groups that could not be looked up without a token get another try.
     if (sources.tmdb !== "none") void session.retryUnmatched();
     return sources;
   });
-  register("setTvdbKey", (key, pin) => keys.setTvdbKey(key, pin));
+  register("setTvdbKey", (key, pin) => keys.setTvdbKey(text(key, "key"), text(pin, "PIN")));
   register("openReference", async (key) => {
     const url = Object.hasOwn(REFERENCES, key) ? REFERENCES[key] : undefined;
     if (!url) throw new Error("Unknown reference.");
@@ -322,7 +339,7 @@ export async function registerHandlers(options: HandlerOptions): Promise<void> {
     shell.showItemInFolder(log.file);
   });
   register("openSourcePage", async (address) => {
-    const url = sourcePage(address);
+    const url = sourcePage(text(address, "address"));
     if (!url) throw new Error("That page cannot be opened.");
     await shell.openExternal(url);
   });

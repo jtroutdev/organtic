@@ -949,7 +949,15 @@ export class Session {
 
   async choose(key: string, index: number) {
     const group = this.group(key);
-    if (!group.candidates[index]) throw new Error("Search again and choose a result.");
+    // A property name such as "slice" would read off the prototype and pass the test below,
+    // so the index must be a whole number within the list, not merely something truthy.
+    if (
+      typeof index !== "number" ||
+      !Number.isInteger(index) ||
+      index < 0 ||
+      index >= group.candidates.length
+    )
+      throw new Error("Search again and choose a result.");
     // Orderings belong to one show; a different choice starts from aired order again.
     if (index !== group.chosen) {
       group.orderings = [];
