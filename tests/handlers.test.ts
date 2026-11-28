@@ -275,3 +275,34 @@ test("a second batch is refused while one runs", async (t) => {
   finish();
   await running;
 });
+
+test("an argument of the wrong type is refused before it is used", async (t) => {
+  const { call, session, logged } = await setup(t);
+  // Every request whose signature says text refuses anything else, rather than passing it on.
+  const refusals: [string, unknown[]][] = [
+    ["search", [{}, { title: "Solaris" }]],
+    ["choose", [null, 0]],
+    ["confirm", [{}]],
+    ["remove", [7]],
+    ["include", [{}]],
+    ["exclude", [7, true]],
+    ["setNumbering", [{}, "tvdb"]],
+    ["setOrdering", [{}, null, false]],
+    ["setEpisode", [{}, { episode: 1 }]],
+    ["resetDestination", [{}]],
+    ["chooseDestination", [{}]],
+    ["batch", [{}]],
+    ["apply", [{}]],
+    ["setToken", [{}]],
+    ["setTvdbKey", [{}, ""]],
+    ["openSourcePage", [{}]],
+    ["moveFiles", [[{}], null]],
+    ["moveFiles", ["not a list", null]],
+  ];
+  for (const [name, args] of refusals)
+    await assert.rejects(() => call(name, ...args), /could not be read|could not be moved/, name);
+  // The queue is untouched and each refusal was logged.
+  assert.deepEqual(session.state().groups, []);
+  const log = await logged();
+  for (const [name] of refusals) assert.match(log, new RegExp(name));
+});

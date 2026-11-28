@@ -1,5 +1,6 @@
 import { groupFiles, rankCandidates } from "./group.ts";
 import { renderTemplate } from "./naming.ts";
+import { isInside, relativeTo } from "./paths.ts";
 import type { Providers } from "./providers.ts";
 import type {
   AppSettings,
@@ -99,8 +100,6 @@ const messageOf = (error: unknown) =>
 const two = (value: number) => String(value).padStart(2, "0");
 // Paths are handled as text so this module needs nothing from Node.
 const separatorOf = (value: string) => (value.includes("\\") ? "\\" : "/");
-const relativeTo = (value: string, root: string) =>
-  value.startsWith(root) ? value.slice(root.length).replace(/^[\\/]+/, "") : value;
 const parentOf = (value: string) => value.replace(/[\\/]?[^\\/]*$/, "");
 const extensionOf = (value: string) =>
   (/\.[^.\\/]+$/.exec(value)?.[0] ?? "").toLowerCase();
@@ -950,7 +949,15 @@ export class Session {
 
   async choose(key: string, index: number) {
     const group = this.group(key);
-    if (!group.candidates[index]) throw new Error("Search again and choose a result.");
+    // A property name such as "slice" would read off the prototype and pass the test below,
+    // so the index must be a whole number within the list, not merely something truthy.
+    if (
+      typeof index !== "number" ||
+      !Number.isInteger(index) ||
+      index < 0 ||
+      index >= group.candidates.length
+    )
+      throw new Error("Search again and choose a result.");
     // Orderings belong to one show; a different choice starts from aired order again.
     if (index !== group.chosen) {
       group.orderings = [];
@@ -1115,11 +1122,14 @@ export class Session {
     const organised = [...new Set(selections.map(({ file }) => file.root))].sort(
       (a, b) => b.length - a.length,
     );
-    const roots = [...new Set(selections.map((item) => item.sourceRoot!))];
+    // Longest first, so a path inside "/media/Show 2" is not read against "/media/Show".
+    const roots = [...new Set(selections.map((item) => item.sourceRoot!))].sort(
+      (a, b) => b.length - a.length,
+    );
     const removed = plan.operations
       .filter((op) => op.type === "rmdir")
       .map((op) => {
-        const root = roots.find((item) => op.target.startsWith(item)) ?? "";
+        const root = roots.find((item) => isInside(op.target, item)) ?? "";
         return relativeTo(op.target, root).split(separatorOf(op.target)).join("/");
       });
     return {
@@ -1128,7 +1138,7 @@ export class Session {
       newFolders: folders.map((op) =>
         shown(
           op.target,
-          organised.find((root) => op.target.startsWith(root)) ?? "",
+          organised.find((root) => isInside(op.target, root)) ?? "",
         ),
       ),
       removedFolders: removed,
@@ -1218,8 +1228,10 @@ export class Session {
   relocate(renamed: { from: string; to: string }[]) {
     const moved = (value: string) => {
       for (const { from, to } of renamed)
-        if (value === from || value.startsWith(from + separatorOf(from)))
-          return to + value.slice(from.length);
+        if (isInside(value, from)) {
+          const rest = relativeTo(value, from);
+          return rest ? to + separatorOf(value) + rest : to;
+        }
       return value;
     };
     for (const [id, file] of this.files)
