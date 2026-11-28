@@ -1013,3 +1013,33 @@ test("a finished or undone batch can be removed from History, an interrupted one
   await assert.rejects(removeBatch(damaged, f.journals), /damaged/);
   await assert.rejects(removeBatch("not-a-batch", f.journals), /Invalid batch/);
 });
+
+test("a folder is canonicalized once, and aliases still collapse to one file", async (t) => {
+  const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "organtic-scan-")));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  await fs.mkdir(path.join(dir, "real/Season 01"), { recursive: true });
+  for (const name of ["a.mkv", "b.mkv", "c.mkv"])
+    await fs.writeFile(path.join(dir, "real/Season 01", name), "bytes");
+  await fs.writeFile(path.join(dir, "real/top.mkv"), "bytes");
+  await fs.symlink(path.join(dir, "real"), path.join(dir, "alias"));
+
+  // The same file named twice, once through a link, is one file, under its real path.
+  const both = await scanPaths([
+    path.join(dir, "real/top.mkv"),
+    path.join(dir, "alias/top.mkv"),
+  ]);
+  assert.deepEqual(both.files.map((file) => file.path), [path.join(dir, "real/top.mkv")]);
+
+  // A whole folder: every file is found, each under the canonical folder, nested ones included.
+  const walked = await scanPaths([path.join(dir, "real")]);
+  assert.deepEqual(
+    walked.files.map((file) => path.relative(dir, file.path)),
+    ["real/Season 01/a.mkv", "real/Season 01/b.mkv", "real/Season 01/c.mkv", "real/top.mkv"],
+  );
+  assert.deepEqual(walked.files.map((file) => file.root), Array(4).fill(path.join(dir, "real")));
+
+  // The link itself is reported rather than followed, so nothing is imported twice.
+  const linked = await scanPaths([path.join(dir, "alias")]);
+  assert.deepEqual(linked.files, []);
+  assert.match(linked.unread[0]!.reason, /links are not followed/);
+});

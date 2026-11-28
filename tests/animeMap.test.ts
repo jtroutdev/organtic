@@ -422,3 +422,29 @@ test("a list with no stated length stops downloading at the limit", async () => 
   assert.ok(cancelled, "the download was stopped");
   assert.ok(sent <= 42, `read ${sent} MB of a 40 MB limit`);
 });
+
+test("a show's first entry is the earliest regular season, and is found once per list", async () => {
+  let downloads = 0;
+  const map = new AnimeMap({
+    fetcher: (async () => {
+      downloads += 1;
+      return Response.json(LIST);
+    }) as typeof fetch,
+  });
+  const read = map as unknown as {
+    firstEntry: (kitsuId: number, catalogue: "tmdb" | "tvdb") => Promise<number | null>;
+  };
+  // 7441 is that show's season 0, so the first regular season is 7442's.
+  assert.equal(await read.firstEntry(41982, "tvdb"), 7442);
+  assert.equal(await read.firstEntry(7442, "tvdb"), 7442);
+  assert.equal(await read.firstEntry(41982, "tmdb"), 7442);
+  // An offset breaks a tie within a season; the other show's parts are both season 1 on TMDB.
+  assert.equal(await read.firstEntry(49240, "tmdb"), 46474);
+  assert.equal(await read.firstEntry(46474, "tvdb"), 46474);
+  // A film, and an entry whose show nobody else shares, have no earlier entry to point at.
+  assert.equal(await read.firstEntry(800, "tmdb"), null);
+  assert.equal(await read.firstEntry(500, "tvdb"), 500);
+  assert.equal(await read.firstEntry(99999, "tvdb"), null);
+  // The list was downloaded once; the answers come from one pass over it.
+  assert.equal(downloads, 2, "the list and its exceptions");
+});
