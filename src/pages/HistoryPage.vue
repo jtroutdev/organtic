@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import type { BatchChange, BatchStatus, ChangeOutcome } from "../../core/types.ts";
 import ActionButton from "../components/ActionButton.vue";
 import ChangeRow from "../components/ChangeRow.vue";
 import ListItem from "../components/ListItem.vue";
 import NoticeBanner from "../components/NoticeBanner.vue";
 import PageHeading from "../components/PageHeading.vue";
+import SegmentedSet from "../components/SegmentedSet.vue";
 import SplitView from "../components/SplitView.vue";
 import StatusPill from "../components/StatusPill.vue";
 import SurfaceCard from "../components/SurfaceCard.vue";
@@ -29,7 +30,6 @@ const STATUS: Record<BatchStatus, [tone: string, label: string]> = {
   undone: ["off", "Undone"],
   damaged: ["bad", "Unreadable"],
 };
-const LIMIT = 200;
 const batch = computed(
   () =>
     store.batches.find((item) => item.id === store.batchSelected) ??
@@ -43,6 +43,31 @@ const changes = computed(() =>
 );
 // Rows that stand in while the changes load: as many as there will be, up to a screenful.
 const LOADING = 8;
+/** How many changes are listed at first, and how many more each press adds. */
+const PAGE = 200;
+const MORE = 500;
+const FILTERS = [
+  ["all", "All", "Every change the batch planned"],
+  ["problems", "Problems", "Failed, skipped and not started"],
+] as const;
+const filter = ref<"all" | "problems">("all");
+const shown = ref(PAGE);
+/** The changes the filter keeps, and the ones listed so far. */
+const listed = computed(() =>
+  (changes.value ?? []).filter(
+    (op) => filter.value === "all" || op.outcome !== "done",
+  ),
+);
+const visible = computed(() => listed.value.slice(0, shown.value));
+const step = computed(() => Math.min(MORE, listed.value.length - shown.value));
+// A different batch, or a different filter, starts from the top again.
+watch([() => batch.value?.id, filter], () => (shown.value = PAGE));
+async function showMore() {
+  shown.value += MORE;
+  announce(`Showing ${visible.value.length} of ${plural(listed.value.length, "change")}.`);
+  // The button pressed is gone once everything is listed: focus goes to the list.
+  if (shown.value >= listed.value.length) await focusOn(".scroll");
+}
 const short = (path: string) =>
   root.value && path.startsWith(root.value) ? path.slice(root.value.length) : path;
 /** A message with its paths shortened the same way. */
@@ -147,12 +172,20 @@ async function remove(id: string) {
         here.</NoticeBanner
       >
       <div v-if="batch.count" class="fill">
-        <h3 class="label">What changed</h3>
+        <div class="head">
+          <h3 class="label">What changed</h3>
+          <SegmentedSet
+            v-if="mixed"
+            v-model="filter"
+            label="Which changes to list"
+            :options="FILTERS"
+          />
+        </div>
         <div v-if="!changes" class="scroll" aria-busy="true">
           <ChangeRow v-for="index in Math.min(batch.count, LOADING)" :key="index" />
         </div>
-        <div v-else class="scroll">
-          <template v-for="(op, index) in changes.slice(0, LIMIT)" :key="index">
+        <div v-else class="scroll" tabindex="-1">
+          <template v-for="(op, index) in visible" :key="index">
             <ChangeRow
               v-if="op.type === 'move' || op.type === 'rename'"
               :before="short(op.source ?? '')"
@@ -172,9 +205,15 @@ async function remove(id: string) {
               :reason="reasonOf(op)"
             />
           </template>
-          <p v-if="changes.length > LIMIT" class="muted more">
-            and {{ changes.length - LIMIT }} more
+          <p v-if="!listed.length" class="muted more">
+            Every change in this batch went through.
           </p>
+          <div v-else-if="listed.length > visible.length" class="more">
+            <ActionButton @click="showMore">Show {{ step }} more</ActionButton>
+            <span class="muted"
+              >{{ visible.length }} of {{ plural(listed.length, "change") }} shown</span
+            >
+          </div>
         </div>
       </div>
       <div class="actions">
@@ -216,7 +255,10 @@ async function remove(id: string) {
 </template>
 
 <style scoped>
-.more{padding-top:var(--space-dense)}
+/* The heading and the filter share a line, the filter against the right edge. */
+.head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--space-nested);align-items:center}
+.more{display:flex;flex-wrap:wrap;gap:var(--space-nested);align-items:center;padding-top:var(--space-nested)}
+.scroll:focus-visible{outline:2px solid var(--color-accent);outline-offset:-2px}
 /* Removing sits apart on the right, level with Undo, however the words beside Undo wrap. */
 .actions{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--space-nested);align-items:start}
 </style>

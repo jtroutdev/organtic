@@ -376,6 +376,8 @@ Every control is 32px tall: buttons, inputs, tabs, steps, segmented sets, list v
 
 A list that can run to hundreds of rows, such as the groups on Matching, does not draw the rows out of sight: each row takes `content-visibility: auto`, with `list-item` (60px, a two-line list item) as its height until it has been drawn. Every row stays in the page, so keyboard movement, find and screen readers reach all of them. Each row is a component of its own, so a change to one row redraws only that row.
 
+A list that can run to thousands of rows is listed a page at a time: the first 200, then a button at the end of the list that adds 500 more and says how many of how many are shown. The button goes when everything is listed, and focus moves to the list. Where the rows can differ in outcome, a segmented set level with the list's heading narrows them to the ones worth looking at, so nothing is ever out of reach behind a count.
+
 Wizard steps (Add files, Review, Preview, Done) end in a footer, set off by the page gap and no rule: the destructive or back action on the left, a secondary action second from the right, the step's one primary action on the far right. History and Settings keep their actions at the top.
 
 ## Elevation & Depth
