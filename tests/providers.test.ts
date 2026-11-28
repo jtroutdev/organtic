@@ -640,3 +640,98 @@ test("a source that redirects is reported as moved, not as offline", async () =>
     /kitsu\.io answered with a move to another address/,
   );
 });
+
+test("a reply larger than the limit is refused, whatever length it claims", async () => {
+  // A megabyte per chunk, sent for ever, with no content-length: the reader must stop on its own.
+  const chunk = new Uint8Array(1_000_000);
+  let sent = 0;
+  const providers = new Providers({
+    fetcher: async () =>
+      new Response(
+        new ReadableStream({
+          pull(controller) {
+            sent += 1;
+            controller.enqueue(chunk);
+          },
+        }),
+        { headers: { "Content-Type": "application/json" } },
+      ),
+  });
+  await assert.rejects(
+    providers.search({ provider: "tvmaze", kind: "tv", query: "Severance" }),
+    /sent more data than Organtic will read/,
+  );
+  // It stopped near the limit rather than reading on.
+  assert.ok(sent <= 12, `read ${sent} MB`);
+});
+
+test("a stated length over the limit is refused without draining the body", async () => {
+  let pulls = 0;
+  const providers = new Providers({
+    fetcher: async () =>
+      new Response(
+        new ReadableStream({
+          pull(controller) {
+            pulls += 1;
+            controller.enqueue(new Uint8Array(10));
+          },
+        }),
+        { headers: { "Content-Length": "99000000" } },
+      ),
+  });
+  await assert.rejects(
+    providers.search({ provider: "tvmaze", kind: "tv", query: "Severance" }),
+    /sent more data than Organtic will read/,
+  );
+  // A stream fills its own queue as soon as it exists, so the point is not that nothing was
+  // pulled but that nobody read on: without the stated-length check this body never ends.
+  assert.ok(pulls <= 1, `pulled ${pulls} times`);
+});
+
+test("a candidate without a usable id is left out", async () => {
+  const providers = new Providers({
+    fetcher: async () =>
+      Response.json([
+        { show: { id: "42", name: "Text id", premiered: "2020-01-01" } },
+        { show: { id: -1, name: "Negative", premiered: "2020-01-01" } },
+        { show: { id: 1.5, name: "Fraction", premiered: "2020-01-01" } },
+        { show: { id: null, name: "No id", premiered: "2020-01-01" } },
+        { show: { name: "Missing", premiered: "2020-01-01" } },
+        {
+          show: {
+            id: 95396,
+            name: "Severance",
+            premiered: "2022-02-17",
+            // An unusable external id is dropped without taking the candidate with it.
+            externals: { thetvdb: "../../elsewhere", imdb: "tt11280740" },
+          },
+        },
+      ]),
+  });
+  const found = await providers.search({ provider: "tvmaze", kind: "tv", query: "Severance" });
+  assert.deepEqual(found.map((item) => item.title), ["Severance"]);
+  assert.equal(found[0]!.id, 95396);
+  assert.equal(found[0]!.tvdbId, undefined);
+  assert.equal(found[0]!.imdbId, "tt11280740");
+});
+
+test("an address that leaves its source's own path is refused", async () => {
+  const asked: string[] = [];
+  const providers = new Providers({
+    fetcher: async (url) => (asked.push(String(url)), Response.json({})),
+  });
+  providers.setToken("test");
+  const escapes = ["../../elsewhere", "/outside", "//example.com/outside"];
+  for (const route of escapes)
+    await assert.rejects(
+      // The private request is reached as the rest of the class does, by route.
+      (providers as unknown as { request: (p: string, r: string) => Promise<unknown> }).request(
+        "tmdb",
+        route,
+      ),
+      /not part of the metadata source/,
+      route,
+    );
+  // Nothing was asked, so the TMDB token never left with any of them.
+  assert.deepEqual(asked, []);
+});

@@ -14,6 +14,7 @@ import type {
 
 import { placeEpisode } from "./animeMap.ts";
 import type { AnimeMap, AnimeMapping, EpisodeRule } from "./animeMap.ts";
+import { readJsonLimited, ReplyTooLarge } from "./http.ts";
 import { normalizeTitle, titleSimilarity } from "./parse.ts";
 import { Throttle } from "./throttle.ts";
 import type { Limit } from "./throttle.ts";
@@ -160,6 +161,13 @@ export const LIMITS: Record<string, Limit> = {
   "api4.thetvdb.com": { calls: 20, per: 10000 },
 };
 /** How many times a request answered with 429 is tried before the source is called busy. */
+/**
+ * An identifier a source sent, which is only typed as a number: at runtime it is whatever
+ * arrived, and it goes into an address. Anything but a whole positive number is refused.
+ */
+const identifier = (value: unknown): number | undefined =>
+  typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined;
+
 const ATTEMPTS = 5;
 
 export class Providers {
@@ -254,7 +262,7 @@ export class Providers {
       } catch {
         throw new Error("Could not reach TVDB. Check your connection and try again.");
       }
-      const data = (await response.json().catch(() => null)) as {
+      const data = (await readJsonLimited(response, "api4.thetvdb.com").catch(() => null)) as {
         data?: { token?: unknown };
       } | null;
       const token = data?.data?.token;
@@ -286,9 +294,12 @@ export class Providers {
       { en: "eng", de: "deu", es: "spa", fr: "fra", it: "ita", pt: "por", ja: "jpn", ko: "kor", zh: "zho" }[
         language.slice(0, 2)
       ] ?? "eng";
+    // The id reached us through TVmaze's externals, so it is checked before it goes in an address.
+    const series = identifier(candidate.tvdbId);
+    if (!series) return [];
     try {
       const url = new URL(
-        `https://api4.thetvdb.com/v4/series/${candidate.tvdbId}/episodes/default/${code}`,
+        `https://api4.thetvdb.com/v4/series/${series}/episodes/default/${code}`,
       );
       url.searchParams.set("season", String(season));
       url.searchParams.set("page", "0");
@@ -311,7 +322,7 @@ export class Providers {
         // An expired sign-in is renewed the next time it is needed.
         if (response.status === 401) this.tvdbSession = null;
         if (!response.ok) return [];
-        const data = (await response.json()) as {
+        const data = (await readJsonLimited(response, url.hostname)) as {
           data?: { episodes?: TvdbEpisode[] };
         };
         listed = Array.isArray(data.data?.episodes) ? data.data.episodes : [];
@@ -352,6 +363,11 @@ export class Providers {
       kitsu: "https://kitsu.io/api/edge/",
     }[provider];
     const url = new URL(route, base);
+    // The route is built from values a source sent, so a ".." in one could walk out of the
+    // source's own path while still carrying its token. The address must stay where it started.
+    const within = new URL(base);
+    if (url.origin !== within.origin || !url.pathname.startsWith(within.pathname))
+      throw new Error("That address is not part of the metadata source.");
     Object.entries(params).forEach(([k, v]) => {
       if (v !== null && v !== undefined && v !== "")
         url.searchParams.set(k, String(v));
@@ -427,8 +443,9 @@ export class Providers {
       }
       let data: unknown;
       try {
-        data = await response.json();
-      } catch {
+        data = await readJsonLimited(response, url.hostname);
+      } catch (error) {
+        if (error instanceof ReplyTooLarge) throw error;
         throw new Error("The source returned invalid data.");
       }
       if (!data || typeof data !== "object")
@@ -472,19 +489,25 @@ export class Providers {
       );
       if (!Array.isArray(data))
         throw new Error("TVmaze returned an unexpected response.");
-      return data.slice(0, 12).map(({ show }) => ({
-        provider,
-        kind,
-        id: show.id,
-        title: show.name,
-        year: yearOf(show.premiered),
-        overview: stripHtml(show.summary),
-        language: show.language,
-        sourceUrl: show.url,
-        tvdbId: show.externals?.thetvdb ?? undefined,
-        imdbId: show.externals?.imdb ?? undefined,
-        posterUrl: show.image?.original ?? undefined,
-      }));
+      return data.slice(0, 12).flatMap(({ show }) => {
+        const id = identifier(show?.id);
+        if (!id) return [];
+        return [
+          {
+            provider,
+            kind,
+            id,
+            title: show.name,
+            year: yearOf(show.premiered),
+            overview: stripHtml(show.summary),
+            language: show.language,
+            sourceUrl: show.url,
+            tvdbId: identifier(show.externals?.thetvdb),
+            imdbId: show.externals?.imdb ?? undefined,
+            posterUrl: show.image?.original ?? undefined,
+          },
+        ];
+      });
     }
     const data = await this.request<{ results?: TmdbSearchItem[] }>(
       provider,
@@ -498,18 +521,24 @@ export class Providers {
     );
     if (!Array.isArray(data.results))
       throw new Error("TMDB returned an unexpected response.");
-    return data.results.slice(0, 12).map((item) => ({
-      provider,
-      kind,
-      id: item.id,
-      title: item.title || item.name || "",
-      year: yearOf(item.release_date || item.first_air_date),
-      overview: item.overview || "",
-      language: item.original_language,
-      sourceUrl: `https://www.themoviedb.org/${kind}/${item.id}`,
-      posterUrl: tmdbImage(item.poster_path),
-      backdropUrl: tmdbImage(item.backdrop_path),
-    }));
+    return data.results.slice(0, 12).flatMap((item) => {
+      const id = identifier(item?.id);
+      if (!id) return [];
+      return [
+        {
+          provider,
+          kind,
+          id,
+          title: item.title || item.name || "",
+          year: yearOf(item.release_date || item.first_air_date),
+          overview: item.overview || "",
+          language: item.original_language,
+          sourceUrl: `https://www.themoviedb.org/${kind}/${id}`,
+          posterUrl: tmdbImage(item.poster_path),
+          backdropUrl: tmdbImage(item.backdrop_path),
+        },
+      ];
+    });
   }
   /**
    * Searches every source that can answer: TMDB when a token is set, TVmaze for shows,
