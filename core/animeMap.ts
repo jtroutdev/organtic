@@ -84,6 +84,29 @@ const whole = (value: unknown, max = 100_000_000): number | undefined =>
 const first = (value: unknown) => (Array.isArray(value) ? value[0] : value);
 
 /**
+ * For each catalogue and show in the list, the entry the show starts with: earliest season,
+ * then earliest within it, then the oldest entry. One pass instead of one per lookup.
+ */
+function buildFirsts(index: Record<string, AnimeMapping>): Map<string, number> {
+  type Place = [season: number, offset: number, id: number];
+  const before = (a: Place, b: Place) => (a[0] - b[0] || a[1] - b[1] || a[2] - b[2]) < 0;
+  const best = new Map<string, Place>();
+  for (const [id, entry] of Object.entries(index)) {
+    if (entry.film) continue;
+    for (const catalogue of ["tmdb", "tvdb"] as const) {
+      const show = entry[`${catalogue}Id`];
+      const season = entry[`${catalogue}Season`];
+      if (!show || !season) continue;
+      const key = `${catalogue}:${show}`;
+      const place: Place = [season, entry[`${catalogue}Offset`] ?? 0, Number(id)];
+      const held = best.get(key);
+      if (!held || before(place, held)) best.set(key, place);
+    }
+  }
+  return new Map([...best].map(([key, place]) => [key, place[2]]));
+}
+
+/**
  * Reduces the community list to what this app uses, keyed by Kitsu ID. The list is other
  * people's data and its numbers end up in file names, so every field is checked for type
  * and range and anything else is dropped.
@@ -181,6 +204,8 @@ export function parseExceptions(xml: string): Map<number, AnimeMapping["rules"]>
 export class AnimeMap {
   enabled = true;
   private index: Promise<Record<string, AnimeMapping>> | null = null;
+  /** Each loaded list's first entry per show, held against that list so a reload rebuilds it. */
+  private firsts = new WeakMap<Record<string, AnimeMapping>, Map<string, number>>();
   private fetcher: typeof fetch;
   private cache: MapCache | undefined;
   private now: () => number;
@@ -220,18 +245,14 @@ export class AnimeMap {
     const mine = index?.[kitsuId];
     const show = mine?.[`${catalogue}Id`];
     if (!index || !mine || mine.film || !show) return null;
-    // Earliest season, then earliest in it, then the oldest entry.
-    type Place = [season: number, offset: number, id: number];
-    const before = (a: Place, b: Place) =>
-      (a[0] - b[0] || a[1] - b[1] || a[2] - b[2]) < 0;
-    let best: Place | null = null;
-    for (const [id, other] of Object.entries(index)) {
-      const season = other[`${catalogue}Season`];
-      if (other.film || other[`${catalogue}Id`] !== show || !season) continue;
-      const place: Place = [season, other[`${catalogue}Offset`] ?? 0, Number(id)];
-      if (!best || before(place, best)) best = place;
+    // Every show's first entry is worked out once per loaded list, not once per lookup: the
+    // list runs to thousands of entries and this is asked once for each anime entry named.
+    let firsts = this.firsts.get(index);
+    if (!firsts) {
+      firsts = buildFirsts(index);
+      this.firsts.set(index, firsts);
     }
-    return best?.[2] ?? null;
+    return firsts.get(`${catalogue}:${show}`) ?? null;
   }
 
   private async load(): Promise<Record<string, AnimeMapping>> {

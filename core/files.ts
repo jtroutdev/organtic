@@ -180,7 +180,12 @@ export async function scanPaths(paths: string[]): Promise<ScanResult> {
       return undefined;
     }
   }
-  async function visit(input: string, root: string) {
+  /**
+   * `canonicalParent` is the folder's own canonical path, worked out once when the walk entered
+   * it and passed down, so a folder of thousands of files costs one `realpath` rather than one
+   * for every file in it.
+   */
+  async function visit(input: string, root: string, canonicalParent?: string) {
     const absolute = path.resolve(input);
     if (visited.has(absolute)) return;
     visited.add(absolute);
@@ -188,6 +193,8 @@ export async function scanPaths(paths: string[]): Promise<ScanResult> {
       throw new Error(
         "Import is limited to 20,000 entries. Choose a smaller folder.",
       );
+    // A large import must not hold up the main process while it walks.
+    if (visited.size % YIELD_EVERY === 0) await giveWay();
     const stat = await reading(absolute, () => fs.lstat(absolute));
     if (!stat) return;
     if (stat.isSymbolicLink()) {
@@ -195,16 +202,25 @@ export async function scanPaths(paths: string[]): Promise<ScanResult> {
       return;
     }
     if (stat.isDirectory()) {
+      // Links are refused above, so a folder inside a canonical folder is that folder's own
+      // name joined on; only the folder the walk starts at needs asking the filesystem.
+      const canonical =
+        canonicalParent === undefined
+          ? await reading(absolute, () => fs.realpath(absolute))
+          : path.join(canonicalParent, path.basename(absolute));
+      if (canonical === undefined) return;
       for (const entry of (await reading(absolute, () => fs.readdir(absolute))) ?? []) {
         if (!entry.startsWith("."))
-          await visit(path.join(absolute, entry), root);
+          await visit(path.join(absolute, entry), root, canonical);
       }
     } else if (
       stat.isFile() &&
       VIDEO_EXTENSIONS.includes(path.extname(absolute).slice(1).toLowerCase())
     ) {
-      // Canonicalize the parent so alternate directory aliases cannot create duplicate operations.
-      const parent = await reading(absolute, () => fs.realpath(path.dirname(absolute)));
+      // The parent is canonical so alternate folder aliases cannot create duplicate operations.
+      // The walk already knows it, except for a file chosen on its own.
+      const parent =
+        canonicalParent ?? (await reading(absolute, () => fs.realpath(path.dirname(absolute))));
       if (parent === undefined) return;
       const canonical = path.join(parent, path.basename(absolute));
       if (found.has(canonical)) return;
